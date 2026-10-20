@@ -28,3 +28,10 @@ local.properties
 /android/.gradle/
 /android/build/
 /android/app/build/
+
+# Built APKs
+*.apk
+/dist/
+
+# IDE
+.idea/
