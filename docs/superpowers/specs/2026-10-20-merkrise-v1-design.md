@@ -446,6 +446,9 @@ any order; unknown columns are ignored (forward-compatible).
 | `alt`     | no       | extra accepted typed answers, separated by `\|` |
 | `audio`   | no       | filename of an accompanying mp3; blank → TTS |
 
+Rows may omit **trailing** empty columns; the importer pads to the header width.
+Empty cells are treated as "not provided".
+
 Example `merkrise.Food-Vocabulary.tsv` (columns are **tab**-separated):
 
 ```
