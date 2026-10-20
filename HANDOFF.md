@@ -65,14 +65,14 @@ user's go-ahead on milestones.
 | D4 | Study modes: **SRS spaced repetition** (backbone), **typing test**, **multiple choice**, **listening/audio**. |
 | D5 | **Adaptive review speed based on word length** — longer words are treated as harder (reviewed sooner + more answer time), and this is **user-adjustable**. This is a deliberate, non-default feature the user asked for specifically. |
 | D6 | Content captured once from Memrise course **690189** using the user's own account, into a local DB the user owns. |
-| D7 | Project lives at **`/home/HSI/workspace/german-trainer`** (ext4). **Never build on `/run/media/HSI/Data`** — that is an NTFS disk whose `ntfs3` driver corrupts freshly-built binaries under load (it SIGSEGV'd a Rust build there earlier). Keep `target/` on ext4. |
+| D7 | Project lives at **`/home/HSI/workspace/merkrise`** (ext4). **Never build on `/run/media/HSI/Data`** — that is an NTFS disk whose `ntfs3` driver corrupts freshly-built binaries under load (it SIGSEGV'd a Rust build there earlier). Keep `target/` on ext4. |
 
 ## 3. Open decisions (defaults chosen — fine to proceed, revisit if the user objects)
 
 | # | Default | Note |
 |---|---------|------|
 | O1 | SRS algorithm = **SM-2** (classic Anki) behind a `Scheduler` trait. | Chosen for simplicity + teachability; swap to FSRS later without touching UI. |
-| O2 | Project/app name = **`german-trainer`** (Rust crate), app id e.g. `com.hsi.germantrainer`. | User didn't object; rename freely if they prefer. |
+| O2 | App name = **Merkrise** (decided 2026-10-20; see spec D3). Rust crate `merkrise-core`, app id `com.hsi.merkrise`, folder `merkrise`. | Superseded — this O2 default no longer applies. |
 | O3 | SQLite owned by Rust via `rusqlite` (bundled). Kotlin never opens the DB. | Keeps single source of truth in core. |
 | O4 | Listening mode uses captured audio when present; **Android TTS** as fallback for words with no audio. | Confirm during capture whether 690189 ships audio. |
 
@@ -107,7 +107,7 @@ an audio reference/path; Kotlin plays it (`MediaPlayer`) or synthesizes via
 
 **Workspace layout (proposed):**
 ```
-german-trainer/
+merkrise/
 ├─ HANDOFF.md                 ← this file
 ├─ docs/                      ← specs, plans, notes
 ├─ core/                      ← Rust crate `german-core` (cdylib + rlib)

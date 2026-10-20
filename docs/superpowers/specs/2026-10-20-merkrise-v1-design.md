@@ -28,16 +28,20 @@ than restart.
   stages.
 - **SM-2** scheduling with the **word-length pace rule** (decision D5).
 - **Import of the user's captured Memrise progress** (growth/interval/dates).
-- **Bundled audio** (3,178 mp3) played directly — fully offline, no TTS.
+- **Bundled audio** (3,178 mp3) for the course, played directly (offline).
+- A **provision for user-added vocabulary** via a bulk-import file format, so
+  new words/decks can be added beyond the captured course (see **§16**).
 - Emulator target: **Pixel_9** (x86_64); keep the core host-compilable for fast
   tests.
 
 ### Out of scope for v1 (explicitly deferred)
 - Publishing / app store / distribution / monetization (decision D1).
-- More than one course; course editing; cloud sync; multi-device.
+- More than one *Memrise* course; Memrise re-sync; cloud sync; multi-device.
+  (User decks via the §16 bulk-import format **are** in scope.)
 - FSRS (SM-2 lives behind a trait so FSRS can replace it later).
-- Text-to-speech fallback (unneeded — 100% of words have audio).
 - Accounts / login inside the app (it is single-user, local).
+- An in-app word *editor* UI (v1 adds words by importing files; a single
+  `add_word` entry point exists in the core for a future screen — §16).
 
 If scope ever moves toward sharing/publishing, **stop** and raise content
 licensing first — the community course is user-generated content under Memrise's
@@ -51,13 +55,13 @@ terms (decision D1).
 |---|----------|
 | D1 | Personal use only; no publishing. |
 | D2 | Architecture: Rust core (NDK `.so`) + Kotlin/Compose UI, bridged with uniffi. Rust owns data/DB/SRS/answer-check/session; Kotlin only draws & plays audio. |
-| D3 | Name = **Merkrise**. App id `com.hsi.merkrise`; Rust crate `merkrise-core`; Gradle app "Merkrise". Project folder stays `german-trainer` (avoids path churn). |
+| D3 | Name = **Merkrise**. App id `com.hsi.merkrise`; Rust crate `merkrise-core`; Gradle app "Merkrise". Project folder = `merkrise` (renamed from `german-trainer` on 2026-10-20). |
 | D4 | v1 includes the **full** five-step Memrise flow (not a lean subset). |
 | D5 | **Word-length-aware, user-adjustable pace**: longer German terms become due sooner and get more answer time. Tunable via `length_weight` (0 = off). |
 | D6 | **Import the user's captured Memrise progress** so mastered words aren't re-taught. |
 | D7 | **Audio is bundled** inside the app for v1 (simplest, fully offline). |
 | D8 | Build order = **full Android from day one**: toolchain+bridge first, then core engine, importer, study UI. |
-| D9 | Build on ext4 only (`/home/HSI/workspace/german-trainer`); never on the NTFS `/run/media/HSI/Data`. Keep `target/` on ext4. |
+| D9 | Build on ext4 only (`/home/HSI/workspace/merkrise`); never on the NTFS `/run/media/HSI/Data`. Keep `target/` on ext4. |
 
 SRS algorithm = SM-2 behind a `Scheduler` trait (swap to FSRS later without
 touching the UI).
@@ -129,15 +133,16 @@ levels(
 );
 
 words(
-  id INTEGER PRIMARY KEY,        -- Memrise learnable id
-  level_idx INTEGER,             -- 1..51
-  position INTEGER,              -- order within the level
+  id INTEGER PRIMARY KEY,        -- Memrise learnable id, or a synthetic id for user words
+  level_idx INTEGER,             -- 1..51 for the course; 52+ for user decks
+  position INTEGER,              -- order within the level/deck
   term TEXT NOT NULL,            -- German
   meaning TEXT NOT NULL,         -- English
   pos_tag TEXT NULL,             -- part of speech
   all_forms TEXT NULL,
   literal TEXT NULL,
-  item_type TEXT                 -- "word" (incl. sentences)
+  item_type TEXT,                -- "word" (incl. sentences)
+  source TEXT DEFAULT 'memrise'  -- 'memrise' | 'user'  (see §16)
 );
 
 word_audio(
@@ -166,6 +171,10 @@ review_state(
 
 settings(key TEXT PRIMARY KEY, value TEXT);   -- holds PaceSettings etc.
 session_log(id INTEGER PRIMARY KEY, started_epoch INTEGER, mode TEXT, summary_json TEXT);
+
+import_log(                                   -- idempotent bulk import (§16)
+  filename TEXT PRIMARY KEY, content_hash TEXT, imported_epoch INTEGER,
+  words_added INTEGER, words_updated INTEGER);
 ```
 
 ---
@@ -271,6 +280,10 @@ fn end_session() -> SessionSummary
 fn get_pace_settings() -> PaceSettings
 fn set_pace_settings(s: PaceSettings)
 fn stats() -> Stats
+fn scan_import_dir(dir: String) -> Result<ImportReport, CoreError>   // bulk add, §16
+fn add_word(deck: String, term: String, meaning: String, pos: Option<String>,
+            forms: Option<String>, literal: Option<String>,
+            alt: Vec<String>, audio_path: Option<String>) -> Result<u64, CoreError>
 ```
 
 Types (uniffi Records/Enums):
@@ -283,6 +296,7 @@ Choice { text, audio_path: Option<String> }      // audio cards show playable ch
 AnswerResult { correct, expected, normalized_input, new_stage, next_due_epoch }
 PaceSettings { base_new_per_day, base_interval_scale, length_weight, base_answer_time_ms }
 ImportStats { levels, words, audio_linked, progress_imported }
+ImportReport { files_seen, files_imported, words_added, words_updated, errors: Vec<String> }
 SessionSummary { reviewed, correct, new_introduced, duration_ms }
 Stats { total_words, known, due_today, streak_days }
 ```
@@ -316,6 +330,10 @@ Audio: the `Card`/`Choice` carry a local asset path; Kotlin plays it with
   `assets/seed.json`. On first run `import_seed` populates the DB and links each
   `word_audio.path` to its bundled asset. ~118 MB app payload — acceptable for a
   personal sideloaded build.
+- **User-added words (§16)** supply their own mp3 (copied in and linked) or, if
+  none is given, are spoken with **Android TTS** (German locale) at runtime. TTS
+  is used *only* for user words that lack audio — course words always use their
+  bundled recordings.
 - (Noted for later, not v1: if size becomes a problem, copy audio to app storage
   on first run and ship a smaller APK — the schema already stores paths, so this
   is a non-breaking change.)
@@ -373,7 +391,7 @@ Per `HANDOFF.md` §9–10 (the verified environment reference):
 ## 13. Project layout
 
 ```
-german-trainer/                 (folder name kept; app = "Merkrise")
+merkrise/                       (app = "Merkrise")
 ├─ HANDOFF.md                   environment/toolchain reference
 ├─ docs/superpowers/specs/      this spec + future specs
 ├─ capture/                     captured course data (git-ignored)
@@ -402,3 +420,81 @@ invalidated (user logged out). No credentials in the repo or app.
 - A "refresh progress" re-capture path if the user wants to re-sync before the
   site disappears entirely.
 - Real-device (arm64) build once the emulator loop is solid.
+
+---
+
+## 16. User-added words & bulk import (provision)
+
+Beyond the captured Memrise course, Merkrise accepts user-supplied vocabulary so
+new words can be added in bulk. Design goals: hand-editable **or** spreadsheet-
+exportable, UTF-8 (umlauts safe), idempotent, and fast for the app to detect and
+act on.
+
+### 16.1 File format
+
+UTF-8 **TSV** (tab-separated) is the canonical format; **CSV** (comma, standard
+quoting) is also accepted. The first line is a **header**; columns may appear in
+any order; unknown columns are ignored (forward-compatible).
+
+| column    | required | meaning |
+|-----------|----------|---------|
+| `term`    | **yes**  | German word/phrase |
+| `meaning` | **yes**  | English meaning |
+| `pos`     | no       | part of speech (`n`, `v`, `adj`, …) |
+| `forms`   | no       | plural / other forms → `all_forms` |
+| `literal` | no       | literal translation |
+| `alt`     | no       | extra accepted typed answers, separated by `\|` |
+| `audio`   | no       | filename of an accompanying mp3; blank → TTS |
+
+Example `merkrise.Food-Vocabulary.tsv` (columns are **tab**-separated):
+
+```
+term	meaning	pos	forms	literal	alt	audio
+der Apfel	the apple	n	die Äpfel			
+essen	to eat	v				
+die Zwiebel	the onion	n	-n		zwiebel|die zwiebel	zwiebel.mp3
+```
+
+### 16.2 Filename convention (how the app "quickly acts")
+
+`merkrise.<deck>.tsv`   (or `.csv`)
+
+- **Only files beginning `merkrise.` are scanned**; everything else in the folder
+  is ignored. This prefix is the signal the app acts on.
+- `<deck>` is the deck/level name; `-` and `_` become spaces
+  (`merkrise.Food-Vocabulary.tsv` → deck **"Food Vocabulary"**). A deck becomes a
+  new level appended **after** the 51 Memrise levels (`level_idx` 52+).
+- Split a large deck across ordered files:
+  `merkrise.<deck>.01.tsv`, `merkrise.<deck>.02.tsv`, … — merged into one deck in
+  numeric order.
+
+### 16.3 Where files go
+
+A user-visible folder the app watches: **`Documents/Merkrise/import/`** (on the
+Pixel_9 emulator, `adb push` files into it). Accompanying mp3s go in
+`Documents/Merkrise/import/audio/`. The app imports on launch and via an explicit
+**"Scan for new words"** action, then shows an `ImportReport`.
+
+### 16.4 Behaviour
+
+- Each `merkrise.*` file is parsed; a `levels` row is created for the deck if
+  absent; rows become `words` with `source = 'user'`.
+- **Idempotent & fast:** re-import updates existing rows (matched on *deck +
+  term*) and **skips unchanged files** (tracked by `content_hash` in
+  `import_log`); never duplicates.
+- New user words enter the SRS as `stage = new, due = now` — the same loop and
+  five-step progression as course words.
+- **Audio:** a named mp3 (placed in `import/audio/`) is copied in and linked; if
+  `audio` is blank the word is spoken via **Android TTS** (German locale) at
+  runtime.
+- **Robust:** malformed rows are skipped and listed in `ImportReport.errors`; the
+  rest import. A missing `term`/`meaning` makes a row invalid.
+
+### 16.5 Schema / API (already folded into §5 and §7)
+
+- `words.source` ('memrise' | 'user'); user decks are `levels` rows with
+  `idx ≥ 52`.
+- `import_log(filename, content_hash, imported_epoch, words_added,
+  words_updated)` for idempotent re-scans.
+- `scan_import_dir(dir)` → `ImportReport`; `add_word(...)` for a future in-app
+  add screen.
