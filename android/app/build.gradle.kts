@@ -34,3 +34,12 @@ dependencies {
     // uniffi-generated bindings call the native lib through JNA.
     implementation("net.java.dev.jna:jna:5.14.0@aar")
 }
+
+// Build the Rust core .so into jniLibs before any build, so a plain
+// `./gradlew assembleDebug` never produces an APK missing the native lib.
+// (The .so is git-ignored; this keeps the native build reproducible.)
+val buildRustCore by tasks.registering(Exec::class) {
+    workingDir = rootProject.rootDir.parentFile // repo root (merkrise/)
+    commandLine("sh", "scripts/build-core-android.sh")
+}
+tasks.named("preBuild") { dependsOn(buildRustCore) }

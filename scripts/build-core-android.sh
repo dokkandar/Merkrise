@@ -5,6 +5,8 @@ set -eu
 
 export ANDROID_HOME="${ANDROID_HOME:-/home/HSI/Android/Sdk}"
 export ANDROID_NDK_HOME="${ANDROID_NDK_HOME:-$ANDROID_HOME/ndk/27.2.12479018}"
+# Ensure cargo/rustup are found even when invoked from Gradle's environment.
+export PATH="$HOME/.cargo/bin:$PATH"
 
 cd "$(dirname "$0")/.."
 cargo ndk -t x86_64 -o android/app/src/main/jniLibs build -p merkrise-core --release
