@@ -13,3 +13,6 @@
 # --- Captured course data (personal; keep local) ---
 /data/seed.sqlite
 /data/audio/
+
+# --- Superpowers execution scratch (ledger/briefs) ---
+/.superpowers/
