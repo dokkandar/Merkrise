@@ -1,0 +1,15 @@
+# --- Secrets & captured personal data (NEVER commit) ---
+/capture/
+*.har
+*.secret*
+.env
+.env.*
+
+# --- Build output ---
+/target/
+**/target/
+*.so
+
+# --- Captured course data (personal; keep local) ---
+/data/seed.sqlite
+/data/audio/
