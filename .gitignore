@@ -16,3 +16,12 @@
 
 # --- Superpowers execution scratch (ledger/briefs) ---
 /.superpowers/
+
+# Android machine-specific
+local.properties
+
+# Gradle / Android build output
+.gradle/
+/android/.gradle/
+/android/build/
+/android/app/build/
