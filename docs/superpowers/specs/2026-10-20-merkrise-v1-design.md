@@ -147,8 +147,16 @@ words(
 
 word_audio(
   word_id INTEGER REFERENCES words(id),
-  path TEXT NOT NULL,            -- local asset path to the mp3
-  ord INTEGER                    -- 0,1 (speaker variants)
+  role TEXT DEFAULT 'word',      -- 'word' | 'ex1' | 'ex2'  (headword or example sentence)
+  speaker TEXT NULL,             -- e.g. 'simon', 'helmut' (lesson packages); NULL for Memrise
+  path TEXT NOT NULL,            -- local asset path to the audio (mp3 or wav)
+  ord INTEGER                    -- recording variant order
+);
+
+word_examples(                   -- example sentences attached to a word (lesson packages, §16.6)
+  word_id INTEGER REFERENCES words(id),
+  ord INTEGER,                   -- 1, 2
+  text TEXT NOT NULL             -- the German example sentence
 );
 
 typing_answers(
@@ -501,3 +509,53 @@ Pixel_9 emulator, `adb push` files into it). Accompanying mp3s go in
   words_updated)` for idempotent re-scans.
 - `scan_import_dir(dir)` → `ImportReport`; `add_word(...)` for a future in-app
   add screen.
+
+### 16.6 Lesson package (folder) import — "upload a folder, get a new chapter"
+
+A second, richer import path for lessons authored as a **folder of per-item
+text + audio** (the user's real format). Dropping such a folder into the import
+area makes the app recognize it as **one new chapter** and import all its words,
+each with example sentences and multi-speaker audio.
+
+**Folder shape** (numbering `N` is the key that ties text ↔ audio ↔ sentences):
+```
+<LessonName>/                      e.g. "01"  ->  chapter titled "Lesson 01" (renameable)
+├─ Files/
+│  ├─ N.txt        German headword            (N = 1..K)
+│  ├─ N.1.txt      German example sentence 1
+│  └─ N.2.txt      German example sentence 2
+├─ <speaker-a>/    e.g. simon/                one subfolder per speaker, any name
+│  ├─ N.wav        headword audio
+│  ├─ N.1.wav      sentence-1 audio
+│  └─ N.2.wav      sentence-2 audio
+├─ <speaker-b>/    e.g. helmut/german voices/  (nested is fine)
+└─ meanings.tsv    OPTIONAL: number → English meaning (see below)
+```
+
+**Detection:** a dropped folder containing a `Files/` directory whose names match
+the `N` / `N.1` / `N.2` `.txt` pattern is treated as a lesson package. The app
+creates a new `levels` row (`idx ≥ 52`, title = folder name) and imports K words
+with `source = 'user'`.
+
+**Per word N:**
+- `term` = `Files/N.txt`; `word_examples` = `N.1.txt`, `N.2.txt`.
+- `word_audio`: role `word`/`ex1`/`ex2`, one row per speaker subfolder that has the
+  matching `N*.wav` (`.wav` and `.mp3` both accepted; missing files tolerated —
+  e.g. a gap in one speaker falls back to the other). `speaker` = the subfolder's
+  leaf name.
+- `meaning` = the English from `meanings.tsv` (below). **Required for the
+  German↔English study flow (D4/D6).** A package with no `meanings.tsv` still
+  imports, but those words stay unlearnable in quiz modes until meanings are added
+  (listening/flashcard review still works).
+
+**`meanings.tsv`** (UTF-8, tab-separated, header row): columns `number`,
+`german`, `english`, optional `example_1`, `example_2`. Only `number` + `english`
+are read on import (german/examples come from the `Files/` texts; they appear in
+the template purely as context for the translator). Merkrise generates this
+template pre-filled from the `Files/` texts so the user only types English.
+
+**Behaviour:** idempotent (re-import matches on chapter + number), tolerant of the
+missing-audio gap, example sentences shown as card context and playable; words
+enter the SRS `new` and run the normal five-step progression once a meaning
+exists. API: handled by the same `scan_import_dir(dir)` (it detects TSV decks vs
+folder packages); audio transcoding (wav→compact) is an optional import step.
