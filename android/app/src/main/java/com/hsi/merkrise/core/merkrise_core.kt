@@ -676,6 +676,12 @@ internal object IntegrityCheckingUniffiLib {
     internal fun ensureInitialized() = Unit
     external fun uniffi_merkrise_core_checksum_func_core_version(
     ): Int
+    external fun uniffi_merkrise_core_checksum_func_get_card(
+    ): Int
+    external fun uniffi_merkrise_core_checksum_func_load_seed(
+    ): Int
+    external fun uniffi_merkrise_core_checksum_func_word_count(
+    ): Int
     external fun ffi_merkrise_core_uniffi_contract_version(
     ): Int
 
@@ -693,6 +699,12 @@ internal object UniffiLib {
     internal fun ensureInitialized() = Unit
     external fun uniffi_merkrise_core_fn_func_core_version(uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    external fun uniffi_merkrise_core_fn_func_get_card(`index`: Int,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_merkrise_core_fn_func_load_seed(`json`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Int
+    external fun uniffi_merkrise_core_fn_func_word_count(uniffi_out_err: UniffiRustCallStatus, 
+    ): Int
     external fun ffi_merkrise_core_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun ffi_merkrise_core_rustbuffer_from_bytes(`bytes`: ForeignBytes.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -812,7 +824,16 @@ private fun uniffiCheckContractApiVersion(lib: IntegrityCheckingUniffiLib) {
 }
 @Suppress("UNUSED_PARAMETER")
 private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
-    if ((lib.uniffi_merkrise_core_checksum_func_core_version() and 0xFFFF) != 37536) {
+    if ((lib.uniffi_merkrise_core_checksum_func_core_version() and 0xFFFF) != 4874) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_merkrise_core_checksum_func_get_card() and 0xFFFF) != 22020) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_merkrise_core_checksum_func_load_seed() and 0xFFFF) != 12597) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_merkrise_core_checksum_func_word_count() and 0xFFFF) != 38275) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
 }
@@ -911,6 +932,29 @@ object NoHandle
 /**
  * @suppress
  */
+public object FfiConverterUInt: FfiConverter<UInt, Int> {
+    override fun lift(value: Int): UInt {
+        return value.toUInt()
+    }
+
+    override fun read(buf: ByteBuffer): UInt {
+        return lift(buf.getInt())
+    }
+
+    override fun lower(value: UInt): Int {
+        return value.toInt()
+    }
+
+    override fun allocationSize(value: UInt) = 4UL
+
+    override fun write(value: UInt, buf: ByteBuffer) {
+        buf.putInt(value.toInt())
+    }
+}
+
+/**
+ * @suppress
+ */
 public object FfiConverterString: FfiConverter<String, RustBuffer.ByValue> {
     // Note: we don't inherit from FfiConverterRustBuffer, because we use a
     // special encoding when lowering/lifting.  We can use `RustBuffer.len` to
@@ -964,13 +1008,231 @@ public object FfiConverterString: FfiConverter<String, RustBuffer.ByValue> {
         buf.put(byteBuf)
     }
 }
+
+
+
+/**
+ * One studyable word handed to the UI.
+ */
+data class WordCard (
+    var `term`: kotlin.String
+    , 
+    var `meaning`: kotlin.String
+    , 
+    var `pos`: kotlin.String?
+    , 
+    var `audioFile`: kotlin.String?
+    , 
+    var `level`: kotlin.UInt
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeWordCard: FfiConverterRustBuffer<WordCard> {
+    override fun read(buf: ByteBuffer): WordCard {
+        return WordCard(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterUInt.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: WordCard) = (
+            FfiConverterString.allocationSize(value.`term`) +
+            FfiConverterString.allocationSize(value.`meaning`) +
+            FfiConverterOptionalString.allocationSize(value.`pos`) +
+            FfiConverterOptionalString.allocationSize(value.`audioFile`) +
+            FfiConverterUInt.allocationSize(value.`level`)
+    )
+
+    override fun write(value: WordCard, buf: ByteBuffer) {
+            FfiConverterString.write(value.`term`, buf)
+            FfiConverterString.write(value.`meaning`, buf)
+            FfiConverterOptionalString.write(value.`pos`, buf)
+            FfiConverterOptionalString.write(value.`audioFile`, buf)
+            FfiConverterUInt.write(value.`level`, buf)
+    }
+}
+
+
+
+
+
+sealed class CoreException: kotlin.Exception() {
+    
+    class Parse(
+        
+        val v1: kotlin.String
+        ) : CoreException() {
+        override val message
+            get() = "v1=${ v1 }"
+    }
+    
+
+    
+
+
+    companion object ErrorHandler : UniffiRustCallStatusErrorHandler<CoreException> {
+        override fun lift(error_buf: RustBuffer.ByValue): CoreException = FfiConverterTypeCoreError.lift(error_buf)
+    }
+
+    
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeCoreError : FfiConverterRustBuffer<CoreException> {
+    override fun read(buf: ByteBuffer): CoreException {
+        
+
+        return when(buf.getInt()) {
+            1 -> CoreException.Parse(
+                FfiConverterString.read(buf),
+                )
+            else -> throw RuntimeException("invalid error enum value, something is very wrong!!")
+        }
+    }
+
+    override fun allocationSize(value: CoreException): ULong {
+        return when(value) {
+            is CoreException.Parse -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+                + FfiConverterString.allocationSize(value.v1)
+            )
+        }
+    }
+
+    override fun write(value: CoreException, buf: ByteBuffer) {
+        when(value) {
+            is CoreException.Parse -> {
+                buf.putInt(1)
+                FfiConverterString.write(value.v1, buf)
+                Unit
+            }
+        }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
+    }
+
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalString: FfiConverterRustBuffer<kotlin.String?> {
+    override fun read(buf: ByteBuffer): kotlin.String? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterString.read(buf)
+    }
+
+    override fun allocationSize(value: kotlin.String?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterString.allocationSize(value)
+        }
+    }
+
+    override fun write(value: kotlin.String?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterString.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalTypeWordCard: FfiConverterRustBuffer<WordCard?> {
+    override fun read(buf: ByteBuffer): WordCard? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeWordCard.read(buf)
+    }
+
+    override fun allocationSize(value: WordCard?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeWordCard.allocationSize(value)
+        }
+    }
+
+    override fun write(value: WordCard?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeWordCard.write(value, buf)
+        }
+    }
+}
         /**
-         * Version banner returned across the uniffi bridge — the Milestone-1 proof
-         * that the Rust core is reachable from Kotlin.
+         * Version banner returned across the uniffi bridge — the Milestone-1 proof.
          */ fun `coreVersion`(): kotlin.String {
             return FfiConverterString.lift(
     uniffiRustCall() { _status ->
     UniffiLib.uniffi_merkrise_core_fn_func_core_version(
+    
+        _status)
+}
+    )
+    }
+    
+ fun `getCard`(`index`: kotlin.UInt): WordCard? {
+            return FfiConverterOptionalTypeWordCard.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_merkrise_core_fn_func_get_card(
+    
+        
+        FfiConverterUInt.lower(`index`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Parse the bundled seed.json and load every word into memory.
+         * Returns how many words were loaded.
+         */
+    @Throws(CoreException::class) fun `loadSeed`(`json`: kotlin.String): kotlin.UInt {
+            return FfiConverterUInt.lift(
+    uniffiRustCallWithError(CoreException) { _status ->
+    UniffiLib.uniffi_merkrise_core_fn_func_load_seed(
+    
+        
+        FfiConverterString.lower(`json`),_status)
+}
+    )
+    }
+    
+ fun `wordCount`(): kotlin.UInt {
+            return FfiConverterUInt.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_merkrise_core_fn_func_word_count(
     
         _status)
 }

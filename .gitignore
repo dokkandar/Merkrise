@@ -35,3 +35,6 @@ local.properties
 
 # IDE
 .idea/
+
+# Bundled course data (derived from capture/, large/personal)
+/android/app/src/main/assets/
