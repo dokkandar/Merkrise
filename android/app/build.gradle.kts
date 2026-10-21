@@ -14,7 +14,7 @@ android {
         versionCode = 1
         versionName = "0.1.0"
         // M1 builds only the emulator ABI; add arm64-v8a for real devices later.
-        ndk { abiFilters += "x86_64" }
+        ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
     }
 
     buildTypes {

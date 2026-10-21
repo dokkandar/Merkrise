@@ -678,17 +678,45 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_merkrise_core_checksum_func_current_question(
     ): Int
+    external fun uniffi_merkrise_core_checksum_func_export_state(
+    ): Int
     external fun uniffi_merkrise_core_checksum_func_get_card(
+    ): Int
+    external fun uniffi_merkrise_core_checksum_func_get_pace(
+    ): Int
+    external fun uniffi_merkrise_core_checksum_func_import_state(
+    ): Int
+    external fun uniffi_merkrise_core_checksum_func_level_words(
     ): Int
     external fun uniffi_merkrise_core_checksum_func_levels(
     ): Int
     external fun uniffi_merkrise_core_checksum_func_load_seed(
     ): Int
+    external fun uniffi_merkrise_core_checksum_func_mark_known(
+    ): Int
+    external fun uniffi_merkrise_core_checksum_func_mark_mistakes(
+    ): Int
+    external fun uniffi_merkrise_core_checksum_func_next_review_alarm(
+    ): Int
+    external fun uniffi_merkrise_core_checksum_func_rate_easy(
+    ): Int
+    external fun uniffi_merkrise_core_checksum_func_reset_progress(
+    ): Int
     external fun uniffi_merkrise_core_checksum_func_session_progress(
+    ): Int
+    external fun uniffi_merkrise_core_checksum_func_set_pace(
+    ): Int
+    external fun uniffi_merkrise_core_checksum_func_set_starred(
+    ): Int
+    external fun uniffi_merkrise_core_checksum_func_start_fast_session(
     ): Int
     external fun uniffi_merkrise_core_checksum_func_start_session(
     ): Int
+    external fun uniffi_merkrise_core_checksum_func_stats(
+    ): Int
     external fun uniffi_merkrise_core_checksum_func_submit_answer(
+    ): Int
+    external fun uniffi_merkrise_core_checksum_func_wand_hint(
     ): Int
     external fun uniffi_merkrise_core_checksum_func_word_count(
     ): Int
@@ -711,17 +739,45 @@ internal object UniffiLib {
     ): RustBuffer.ByValue
     external fun uniffi_merkrise_core_fn_func_current_question(uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    external fun uniffi_merkrise_core_fn_func_export_state(uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     external fun uniffi_merkrise_core_fn_func_get_card(`index`: Int,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_merkrise_core_fn_func_get_pace(uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_merkrise_core_fn_func_import_state(`json`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Int
+    external fun uniffi_merkrise_core_fn_func_level_words(`level`: Int,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_merkrise_core_fn_func_levels(uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_merkrise_core_fn_func_load_seed(`json`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Int
+    external fun uniffi_merkrise_core_fn_func_mark_known(`word`: Int,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    external fun uniffi_merkrise_core_fn_func_mark_mistakes(`expected`: RustBuffer.ByValue,`typed`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_merkrise_core_fn_func_next_review_alarm(`minWords`: Int,`now`: Long,`lastNotified`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_merkrise_core_fn_func_rate_easy(`word`: Int,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    external fun uniffi_merkrise_core_fn_func_reset_progress(uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
     external fun uniffi_merkrise_core_fn_func_session_progress(uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
-    external fun uniffi_merkrise_core_fn_func_start_session(`level`: RustBuffer.ByValue,`size`: Int,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_merkrise_core_fn_func_set_pace(`p`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    external fun uniffi_merkrise_core_fn_func_set_starred(`word`: Int,`starred`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    external fun uniffi_merkrise_core_fn_func_start_fast_session(`level`: RustBuffer.ByValue,`size`: Int,`now`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Int
+    external fun uniffi_merkrise_core_fn_func_start_session(`level`: RustBuffer.ByValue,`size`: Int,`now`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): Int
+    external fun uniffi_merkrise_core_fn_func_stats(`now`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     external fun uniffi_merkrise_core_fn_func_submit_answer(`userInput`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_merkrise_core_fn_func_wand_hint(`placed`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_merkrise_core_fn_func_word_count(uniffi_out_err: UniffiRustCallStatus, 
     ): Int
@@ -850,7 +906,19 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_merkrise_core_checksum_func_current_question() and 0xFFFF) != 62473) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_merkrise_core_checksum_func_export_state() and 0xFFFF) != 33241) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_merkrise_core_checksum_func_get_card() and 0xFFFF) != 22020) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_merkrise_core_checksum_func_get_pace() and 0xFFFF) != 61556) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_merkrise_core_checksum_func_import_state() and 0xFFFF) != 33373) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_merkrise_core_checksum_func_level_words() and 0xFFFF) != 36045) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_merkrise_core_checksum_func_levels() and 0xFFFF) != 58462) {
@@ -859,13 +927,43 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_merkrise_core_checksum_func_load_seed() and 0xFFFF) != 24762) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_merkrise_core_checksum_func_mark_known() and 0xFFFF) != 27380) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_merkrise_core_checksum_func_mark_mistakes() and 0xFFFF) != 42453) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_merkrise_core_checksum_func_next_review_alarm() and 0xFFFF) != 6287) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_merkrise_core_checksum_func_rate_easy() and 0xFFFF) != 23940) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_merkrise_core_checksum_func_reset_progress() and 0xFFFF) != 2830) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_merkrise_core_checksum_func_session_progress() and 0xFFFF) != 5867) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_merkrise_core_checksum_func_start_session() and 0xFFFF) != 34006) {
+    if ((lib.uniffi_merkrise_core_checksum_func_set_pace() and 0xFFFF) != 14791) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_merkrise_core_checksum_func_set_starred() and 0xFFFF) != 42505) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_merkrise_core_checksum_func_start_fast_session() and 0xFFFF) != 38876) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_merkrise_core_checksum_func_start_session() and 0xFFFF) != 51701) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_merkrise_core_checksum_func_stats() and 0xFFFF) != 15431) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_merkrise_core_checksum_func_submit_answer() and 0xFFFF) != 63944) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_merkrise_core_checksum_func_wand_hint() and 0xFFFF) != 27437) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_merkrise_core_checksum_func_word_count() and 0xFFFF) != 38275) {
@@ -990,6 +1088,52 @@ public object FfiConverterUInt: FfiConverter<UInt, Int> {
 /**
  * @suppress
  */
+public object FfiConverterLong: FfiConverter<Long, Long> {
+    override fun lift(value: Long): Long {
+        return value
+    }
+
+    override fun read(buf: ByteBuffer): Long {
+        return buf.getLong()
+    }
+
+    override fun lower(value: Long): Long {
+        return value
+    }
+
+    override fun allocationSize(value: Long) = 8UL
+
+    override fun write(value: Long, buf: ByteBuffer) {
+        buf.putLong(value)
+    }
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterFloat: FfiConverter<Float, Float> {
+    override fun lift(value: Float): Float {
+        return value
+    }
+
+    override fun read(buf: ByteBuffer): Float {
+        return buf.getFloat()
+    }
+
+    override fun lower(value: Float): Float {
+        return value
+    }
+
+    override fun allocationSize(value: Float) = 4UL
+
+    override fun write(value: Float, buf: ByteBuffer) {
+        buf.putFloat(value)
+    }
+}
+
+/**
+ * @suppress
+ */
 public object FfiConverterBoolean: FfiConverter<Boolean, Byte> {
     override fun lift(value: Byte): Boolean {
         return value.toInt() != 0
@@ -1075,6 +1219,14 @@ data class AnswerFeedback (
     var `expected`: kotlin.String
     , 
     var `finished`: kotlin.Boolean
+    , 
+    var `scored`: kotlin.Boolean
+    , 
+    var `stage`: Stage
+    , 
+    var `nextDue`: kotlin.Long
+    , 
+    var `hinted`: kotlin.Boolean
     
 ){
     
@@ -1094,19 +1246,31 @@ public object FfiConverterTypeAnswerFeedback: FfiConverterRustBuffer<AnswerFeedb
             FfiConverterBoolean.read(buf),
             FfiConverterString.read(buf),
             FfiConverterBoolean.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterTypeStage.read(buf),
+            FfiConverterLong.read(buf),
+            FfiConverterBoolean.read(buf),
         )
     }
 
     override fun allocationSize(value: AnswerFeedback) = (
             FfiConverterBoolean.allocationSize(value.`correct`) +
             FfiConverterString.allocationSize(value.`expected`) +
-            FfiConverterBoolean.allocationSize(value.`finished`)
+            FfiConverterBoolean.allocationSize(value.`finished`) +
+            FfiConverterBoolean.allocationSize(value.`scored`) +
+            FfiConverterTypeStage.allocationSize(value.`stage`) +
+            FfiConverterLong.allocationSize(value.`nextDue`) +
+            FfiConverterBoolean.allocationSize(value.`hinted`)
     )
 
     override fun write(value: AnswerFeedback, buf: ByteBuffer) {
             FfiConverterBoolean.write(value.`correct`, buf)
             FfiConverterString.write(value.`expected`, buf)
             FfiConverterBoolean.write(value.`finished`, buf)
+            FfiConverterBoolean.write(value.`scored`, buf)
+            FfiConverterTypeStage.write(value.`stage`, buf)
+            FfiConverterLong.write(value.`nextDue`, buf)
+            FfiConverterBoolean.write(value.`hinted`, buf)
     }
 }
 
@@ -1120,7 +1284,13 @@ data class LevelInfo (
     , 
     var `title`: kotlin.String
     , 
+    var `topic`: kotlin.String
+    , 
     var `count`: kotlin.UInt
+    , 
+    var `known`: kotlin.UInt
+    , 
+    var `learning`: kotlin.UInt
     
 ){
     
@@ -1139,6 +1309,9 @@ public object FfiConverterTypeLevelInfo: FfiConverterRustBuffer<LevelInfo> {
         return LevelInfo(
             FfiConverterUInt.read(buf),
             FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
             FfiConverterUInt.read(buf),
         )
     }
@@ -1146,13 +1319,74 @@ public object FfiConverterTypeLevelInfo: FfiConverterRustBuffer<LevelInfo> {
     override fun allocationSize(value: LevelInfo) = (
             FfiConverterUInt.allocationSize(value.`index`) +
             FfiConverterString.allocationSize(value.`title`) +
-            FfiConverterUInt.allocationSize(value.`count`)
+            FfiConverterString.allocationSize(value.`topic`) +
+            FfiConverterUInt.allocationSize(value.`count`) +
+            FfiConverterUInt.allocationSize(value.`known`) +
+            FfiConverterUInt.allocationSize(value.`learning`)
     )
 
     override fun write(value: LevelInfo, buf: ByteBuffer) {
             FfiConverterUInt.write(value.`index`, buf)
             FfiConverterString.write(value.`title`, buf)
+            FfiConverterString.write(value.`topic`, buf)
             FfiConverterUInt.write(value.`count`, buf)
+            FfiConverterUInt.write(value.`known`, buf)
+            FfiConverterUInt.write(value.`learning`, buf)
+    }
+}
+
+
+
+/**
+ * User-adjustable pace (spec §6.3).
+ */
+data class PaceSettings (
+    /**
+     * New words introduced in one session.
+     */
+    var `newPerSession`: kotlin.UInt
+    , 
+    /**
+     * Global multiplier on every interval (<1 reviews more often).
+     */
+    var `intervalScale`: kotlin.Float
+    , 
+    /**
+     * 0 = pure SM-2; higher = longer words come due sooner.
+     */
+    var `lengthWeight`: kotlin.Float
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypePaceSettings: FfiConverterRustBuffer<PaceSettings> {
+    override fun read(buf: ByteBuffer): PaceSettings {
+        return PaceSettings(
+            FfiConverterUInt.read(buf),
+            FfiConverterFloat.read(buf),
+            FfiConverterFloat.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: PaceSettings) = (
+            FfiConverterUInt.allocationSize(value.`newPerSession`) +
+            FfiConverterFloat.allocationSize(value.`intervalScale`) +
+            FfiConverterFloat.allocationSize(value.`lengthWeight`)
+    )
+
+    override fun write(value: PaceSettings, buf: ByteBuffer) {
+            FfiConverterUInt.write(value.`newPerSession`, buf)
+            FfiConverterFloat.write(value.`intervalScale`, buf)
+            FfiConverterFloat.write(value.`lengthWeight`, buf)
     }
 }
 
@@ -1168,11 +1402,34 @@ data class Question (
     , 
     var `kind`: QKind
     , 
+    var `word`: kotlin.UInt
+    , 
     var `prompt`: kotlin.String
     , 
     var `promptAudio`: kotlin.String?
     , 
     var `choices`: List<kotlin.String>
+    , 
+    var `tiles`: List<kotlin.String>
+    , 
+    var `meaning`: kotlin.String?
+    , 
+    var `detail`: kotlin.String?
+    , 
+    var `note`: kotlin.String?
+    , 
+    var `stage`: Stage
+    , 
+    var `reps`: kotlin.UInt
+    , 
+    var `starred`: kotlin.Boolean
+    , 
+    var `retry`: kotlin.Boolean
+    , 
+    /**
+     * Fast review: the time to answer in ms (the UI submits "" when it runs out); 0 = untimed.
+     */
+    var `timeLimitMs`: kotlin.UInt
     
 ){
     
@@ -1192,9 +1449,19 @@ public object FfiConverterTypeQuestion: FfiConverterRustBuffer<Question> {
             FfiConverterUInt.read(buf),
             FfiConverterUInt.read(buf),
             FfiConverterTypeQKind.read(buf),
+            FfiConverterUInt.read(buf),
             FfiConverterString.read(buf),
             FfiConverterOptionalString.read(buf),
             FfiConverterSequenceString.read(buf),
+            FfiConverterSequenceString.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterTypeStage.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterUInt.read(buf),
         )
     }
 
@@ -1202,18 +1469,85 @@ public object FfiConverterTypeQuestion: FfiConverterRustBuffer<Question> {
             FfiConverterUInt.allocationSize(value.`position`) +
             FfiConverterUInt.allocationSize(value.`total`) +
             FfiConverterTypeQKind.allocationSize(value.`kind`) +
+            FfiConverterUInt.allocationSize(value.`word`) +
             FfiConverterString.allocationSize(value.`prompt`) +
             FfiConverterOptionalString.allocationSize(value.`promptAudio`) +
-            FfiConverterSequenceString.allocationSize(value.`choices`)
+            FfiConverterSequenceString.allocationSize(value.`choices`) +
+            FfiConverterSequenceString.allocationSize(value.`tiles`) +
+            FfiConverterOptionalString.allocationSize(value.`meaning`) +
+            FfiConverterOptionalString.allocationSize(value.`detail`) +
+            FfiConverterOptionalString.allocationSize(value.`note`) +
+            FfiConverterTypeStage.allocationSize(value.`stage`) +
+            FfiConverterUInt.allocationSize(value.`reps`) +
+            FfiConverterBoolean.allocationSize(value.`starred`) +
+            FfiConverterBoolean.allocationSize(value.`retry`) +
+            FfiConverterUInt.allocationSize(value.`timeLimitMs`)
     )
 
     override fun write(value: Question, buf: ByteBuffer) {
             FfiConverterUInt.write(value.`position`, buf)
             FfiConverterUInt.write(value.`total`, buf)
             FfiConverterTypeQKind.write(value.`kind`, buf)
+            FfiConverterUInt.write(value.`word`, buf)
             FfiConverterString.write(value.`prompt`, buf)
             FfiConverterOptionalString.write(value.`promptAudio`, buf)
             FfiConverterSequenceString.write(value.`choices`, buf)
+            FfiConverterSequenceString.write(value.`tiles`, buf)
+            FfiConverterOptionalString.write(value.`meaning`, buf)
+            FfiConverterOptionalString.write(value.`detail`, buf)
+            FfiConverterOptionalString.write(value.`note`, buf)
+            FfiConverterTypeStage.write(value.`stage`, buf)
+            FfiConverterUInt.write(value.`reps`, buf)
+            FfiConverterBoolean.write(value.`starred`, buf)
+            FfiConverterBoolean.write(value.`retry`, buf)
+            FfiConverterUInt.write(value.`timeLimitMs`, buf)
+    }
+}
+
+
+
+/**
+ * When to remind the owner (spec §4). All times are core clock (epoch + local tz offset).
+ */
+data class ReviewAlarm (
+    /**
+     * Alarm time; -1 = never (fewer than `min_words` words have ever been studied).
+     */
+    var `at`: kotlin.Long
+    , 
+    /**
+     * Words due by `at`.
+     */
+    var `count`: kotlin.UInt
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeReviewAlarm: FfiConverterRustBuffer<ReviewAlarm> {
+    override fun read(buf: ByteBuffer): ReviewAlarm {
+        return ReviewAlarm(
+            FfiConverterLong.read(buf),
+            FfiConverterUInt.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: ReviewAlarm) = (
+            FfiConverterLong.allocationSize(value.`at`) +
+            FfiConverterUInt.allocationSize(value.`count`)
+    )
+
+    override fun write(value: ReviewAlarm, buf: ByteBuffer) {
+            FfiConverterLong.write(value.`at`, buf)
+            FfiConverterUInt.write(value.`count`, buf)
     }
 }
 
@@ -1225,6 +1559,8 @@ data class SessionProgress (
     var `answered`: kotlin.UInt
     , 
     var `correct`: kotlin.UInt
+    , 
+    var `scored`: kotlin.UInt
     , 
     var `finished`: kotlin.Boolean
     
@@ -1246,6 +1582,7 @@ public object FfiConverterTypeSessionProgress: FfiConverterRustBuffer<SessionPro
             FfiConverterUInt.read(buf),
             FfiConverterUInt.read(buf),
             FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
             FfiConverterBoolean.read(buf),
         )
     }
@@ -1254,6 +1591,7 @@ public object FfiConverterTypeSessionProgress: FfiConverterRustBuffer<SessionPro
             FfiConverterUInt.allocationSize(value.`total`) +
             FfiConverterUInt.allocationSize(value.`answered`) +
             FfiConverterUInt.allocationSize(value.`correct`) +
+            FfiConverterUInt.allocationSize(value.`scored`) +
             FfiConverterBoolean.allocationSize(value.`finished`)
     )
 
@@ -1261,7 +1599,66 @@ public object FfiConverterTypeSessionProgress: FfiConverterRustBuffer<SessionPro
             FfiConverterUInt.write(value.`total`, buf)
             FfiConverterUInt.write(value.`answered`, buf)
             FfiConverterUInt.write(value.`correct`, buf)
+            FfiConverterUInt.write(value.`scored`, buf)
             FfiConverterBoolean.write(value.`finished`, buf)
+    }
+}
+
+
+
+data class Stats (
+    var `totalWords`: kotlin.UInt
+    , 
+    var `known`: kotlin.UInt
+    , 
+    var `learning`: kotlin.UInt
+    , 
+    var `newWords`: kotlin.UInt
+    , 
+    var `dueToday`: kotlin.UInt
+    , 
+    var `streakDays`: kotlin.UInt
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeStats: FfiConverterRustBuffer<Stats> {
+    override fun read(buf: ByteBuffer): Stats {
+        return Stats(
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: Stats) = (
+            FfiConverterUInt.allocationSize(value.`totalWords`) +
+            FfiConverterUInt.allocationSize(value.`known`) +
+            FfiConverterUInt.allocationSize(value.`learning`) +
+            FfiConverterUInt.allocationSize(value.`newWords`) +
+            FfiConverterUInt.allocationSize(value.`dueToday`) +
+            FfiConverterUInt.allocationSize(value.`streakDays`)
+    )
+
+    override fun write(value: Stats, buf: ByteBuffer) {
+            FfiConverterUInt.write(value.`totalWords`, buf)
+            FfiConverterUInt.write(value.`known`, buf)
+            FfiConverterUInt.write(value.`learning`, buf)
+            FfiConverterUInt.write(value.`newWords`, buf)
+            FfiConverterUInt.write(value.`dueToday`, buf)
+            FfiConverterUInt.write(value.`streakDays`, buf)
     }
 }
 
@@ -1323,11 +1720,134 @@ public object FfiConverterTypeWordCard: FfiConverterRustBuffer<WordCard> {
 
 
 
+/**
+ * Which words of an answer are wrong, for highlighting. Index-aligned to `split_whitespace()` of
+ * each string: `typed[i]` = the i-th typed word is wrong (not in the longest common run of words),
+ * `expected[i]` = the i-th correct word was missed or mistyped. Compared like the answer checker:
+ * case, umlaut spelling and punctuation are ignored, and a lone "?" or "-" is never a mistake.
+ */
+data class WordMarks (
+    var `typed`: List<kotlin.Boolean>
+    , 
+    var `expected`: List<kotlin.Boolean>
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeWordMarks: FfiConverterRustBuffer<WordMarks> {
+    override fun read(buf: ByteBuffer): WordMarks {
+        return WordMarks(
+            FfiConverterSequenceBoolean.read(buf),
+            FfiConverterSequenceBoolean.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: WordMarks) = (
+            FfiConverterSequenceBoolean.allocationSize(value.`typed`) +
+            FfiConverterSequenceBoolean.allocationSize(value.`expected`)
+    )
+
+    override fun write(value: WordMarks, buf: ByteBuffer) {
+            FfiConverterSequenceBoolean.write(value.`typed`, buf)
+            FfiConverterSequenceBoolean.write(value.`expected`, buf)
+    }
+}
+
+
+
+/**
+ * One word of a chapter, with its learning state (lesson grid + word list).
+ */
+data class WordRow (
+    var `index`: kotlin.UInt
+    , 
+    var `term`: kotlin.String
+    , 
+    var `meaning`: kotlin.String
+    , 
+    var `audioFile`: kotlin.String?
+    , 
+    var `stage`: Stage
+    , 
+    var `reps`: kotlin.UInt
+    , 
+    var `due`: kotlin.Long
+    , 
+    var `starred`: kotlin.Boolean
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeWordRow: FfiConverterRustBuffer<WordRow> {
+    override fun read(buf: ByteBuffer): WordRow {
+        return WordRow(
+            FfiConverterUInt.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterTypeStage.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterLong.read(buf),
+            FfiConverterBoolean.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: WordRow) = (
+            FfiConverterUInt.allocationSize(value.`index`) +
+            FfiConverterString.allocationSize(value.`term`) +
+            FfiConverterString.allocationSize(value.`meaning`) +
+            FfiConverterOptionalString.allocationSize(value.`audioFile`) +
+            FfiConverterTypeStage.allocationSize(value.`stage`) +
+            FfiConverterUInt.allocationSize(value.`reps`) +
+            FfiConverterLong.allocationSize(value.`due`) +
+            FfiConverterBoolean.allocationSize(value.`starred`)
+    )
+
+    override fun write(value: WordRow, buf: ByteBuffer) {
+            FfiConverterUInt.write(value.`index`, buf)
+            FfiConverterString.write(value.`term`, buf)
+            FfiConverterString.write(value.`meaning`, buf)
+            FfiConverterOptionalString.write(value.`audioFile`, buf)
+            FfiConverterTypeStage.write(value.`stage`, buf)
+            FfiConverterUInt.write(value.`reps`, buf)
+            FfiConverterLong.write(value.`due`, buf)
+            FfiConverterBoolean.write(value.`starred`, buf)
+    }
+}
+
+
+
 
 
 sealed class CoreException: kotlin.Exception() {
     
     class Parse(
+        
+        val v1: kotlin.String
+        ) : CoreException() {
+        override val message
+            get() = "v1=${ v1 }"
+    }
+    
+    class State(
         
         val v1: kotlin.String
         ) : CoreException() {
@@ -1363,7 +1883,10 @@ public object FfiConverterTypeCoreError : FfiConverterRustBuffer<CoreException> 
             1 -> CoreException.Parse(
                 FfiConverterString.read(buf),
                 )
-            2 -> CoreException.NoWords()
+            2 -> CoreException.State(
+                FfiConverterString.read(buf),
+                )
+            3 -> CoreException.NoWords()
             else -> throw RuntimeException("invalid error enum value, something is very wrong!!")
         }
     }
@@ -1371,6 +1894,11 @@ public object FfiConverterTypeCoreError : FfiConverterRustBuffer<CoreException> 
     override fun allocationSize(value: CoreException): ULong {
         return when(value) {
             is CoreException.Parse -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+                + FfiConverterString.allocationSize(value.v1)
+            )
+            is CoreException.State -> (
                 // Add the size for the Int that specifies the variant plus the size needed for all fields
                 4UL
                 + FfiConverterString.allocationSize(value.v1)
@@ -1389,8 +1917,13 @@ public object FfiConverterTypeCoreError : FfiConverterRustBuffer<CoreException> 
                 FfiConverterString.write(value.v1, buf)
                 Unit
             }
-            is CoreException.NoWords -> {
+            is CoreException.State -> {
                 buf.putInt(2)
+                FfiConverterString.write(value.v1, buf)
+                Unit
+            }
+            is CoreException.NoWords -> {
+                buf.putInt(3)
                 Unit
             }
         }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
@@ -1403,8 +1936,34 @@ public object FfiConverterTypeCoreError : FfiConverterRustBuffer<CoreException> 
 
 enum class QKind {
     
-    MULTIPLE_CHOICE,
-    TYPING;
+    /**
+     * "Learn new word" card: term, meaning, audio. Not scored.
+     */
+    PRESENTATION,
+    /**
+     * English prompt, pick the German.
+     */
+    MC,
+    /**
+     * German prompt (+audio), pick the English.
+     */
+    REVERSED,
+    /**
+     * Audio prompt, pick the German.
+     */
+    AUDIO_MC,
+    /**
+     * English prompt, type the German.
+     */
+    TYPING,
+    /**
+     * Audio prompt, type what you hear.
+     */
+    HEARING,
+    /**
+     * English prompt, put the German words in order.
+     */
+    ARRANGE;
 
     
 
@@ -1426,6 +1985,48 @@ public object FfiConverterTypeQKind: FfiConverterRustBuffer<QKind> {
     override fun allocationSize(value: QKind) = 4UL
 
     override fun write(value: QKind, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
+/**
+ * Where a word is on the Memrise ladder. The stage selects the next card type:
+ * New = presentation + multiple choice, then Mc -> Reversed -> Audio -> Typing -> Known.
+ */
+
+enum class Stage {
+    
+    NEW,
+    MC,
+    REVERSED,
+    AUDIO,
+    TYPING,
+    KNOWN;
+
+    
+
+
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeStage: FfiConverterRustBuffer<Stage> {
+    override fun read(buf: ByteBuffer) = try {
+        Stage.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: Stage) = 4UL
+
+    override fun write(value: Stage, buf: ByteBuffer) {
         buf.putInt(value.ordinal + 1)
     }
 }
@@ -1598,6 +2199,62 @@ public object FfiConverterOptionalTypeWordCard: FfiConverterRustBuffer<WordCard?
 /**
  * @suppress
  */
+public object FfiConverterSequenceUInt: FfiConverterRustBuffer<List<kotlin.UInt>> {
+    override fun read(buf: ByteBuffer): List<kotlin.UInt> {
+        val len = buf.getInt()
+        return List<kotlin.UInt>(len) {
+            FfiConverterUInt.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<kotlin.UInt>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterUInt.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<kotlin.UInt>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterUInt.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceBoolean: FfiConverterRustBuffer<List<kotlin.Boolean>> {
+    override fun read(buf: ByteBuffer): List<kotlin.Boolean> {
+        val len = buf.getInt()
+        return List<kotlin.Boolean>(len) {
+            FfiConverterBoolean.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<kotlin.Boolean>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterBoolean.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<kotlin.Boolean>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterBoolean.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterSequenceString: FfiConverterRustBuffer<List<kotlin.String>> {
     override fun read(buf: ByteBuffer): List<kotlin.String> {
         val len = buf.getInt()
@@ -1646,6 +2303,34 @@ public object FfiConverterSequenceTypeLevelInfo: FfiConverterRustBuffer<List<Lev
             FfiConverterTypeLevelInfo.write(it, buf)
         }
     }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeWordRow: FfiConverterRustBuffer<List<WordRow>> {
+    override fun read(buf: ByteBuffer): List<WordRow> {
+        val len = buf.getInt()
+        return List<WordRow>(len) {
+            FfiConverterTypeWordRow.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<WordRow>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeWordRow.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<WordRow>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeWordRow.write(it, buf)
+        }
+    }
 } fun `coreVersion`(): kotlin.String {
             return FfiConverterString.lift(
     uniffiRustCall() { _status ->
@@ -1666,6 +2351,16 @@ public object FfiConverterSequenceTypeLevelInfo: FfiConverterRustBuffer<List<Lev
     )
     }
     
+ fun `exportState`(): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_merkrise_core_fn_func_export_state(
+    
+        _status)
+}
+    )
+    }
+    
  fun `getCard`(`index`: kotlin.UInt): WordCard? {
             return FfiConverterOptionalTypeWordCard.lift(
     uniffiRustCall() { _status ->
@@ -1673,6 +2368,42 @@ public object FfiConverterSequenceTypeLevelInfo: FfiConverterRustBuffer<List<Lev
     
         
         FfiConverterUInt.lower(`index`),_status)
+}
+    )
+    }
+    
+ fun `getPace`(): PaceSettings {
+            return FfiConverterTypePaceSettings.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_merkrise_core_fn_func_get_pace(
+    
+        _status)
+}
+    )
+    }
+    
+
+        /**
+         * Returns how many words' saved state was applied.
+         */
+    @Throws(CoreException::class) fun `importState`(`json`: kotlin.String): kotlin.UInt {
+            return FfiConverterUInt.lift(
+    uniffiRustCallWithError(CoreException) { _status ->
+    UniffiLib.uniffi_merkrise_core_fn_func_import_state(
+    
+        
+        FfiConverterString.lower(`json`),_status)
+}
+    )
+    }
+    
+ fun `levelWords`(`level`: kotlin.UInt): List<WordRow> {
+            return FfiConverterSequenceTypeWordRow.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_merkrise_core_fn_func_level_words(
+    
+        
+        FfiConverterUInt.lower(`level`),_status)
 }
     )
     }
@@ -1699,6 +2430,74 @@ public object FfiConverterSequenceTypeLevelInfo: FfiConverterRustBuffer<List<Lev
     )
     }
     
+
+        /**
+         * "Already learnt": the word becomes Known and its remaining cards in this
+         * session are dropped. The caller then asks for current_question() again.
+         */ fun `markKnown`(`word`: kotlin.UInt)
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_merkrise_core_fn_func_mark_known(
+    
+        
+        FfiConverterUInt.lower(`word`),_status)
+}
+    
+    
+ fun `markMistakes`(`expected`: kotlin.String, `typed`: kotlin.String): WordMarks {
+            return FfiConverterTypeWordMarks.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_merkrise_core_fn_func_mark_mistakes(
+    
+        
+        FfiConverterString.lower(`expected`),
+        FfiConverterString.lower(`typed`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * The time the `min_words`-th studied word is due, not before `now`, nor within 4 h of
+         * `last_notified`, nor in quiet hours. "Due" is the Home tile's definition (`stats().due_today`).
+         */ fun `nextReviewAlarm`(`minWords`: kotlin.UInt, `now`: kotlin.Long, `lastNotified`: kotlin.Long): ReviewAlarm {
+            return FfiConverterTypeReviewAlarm.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_merkrise_core_fn_func_next_review_alarm(
+    
+        
+        FfiConverterUInt.lower(`minWords`),
+        FfiConverterLong.lower(`now`),
+        FfiConverterLong.lower(`lastNotified`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * "Easy": a nudge to the ease factor so the next intervals grow faster.
+         */ fun `rateEasy`(`word`: kotlin.UInt)
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_merkrise_core_fn_func_rate_easy(
+    
+        
+        FfiConverterUInt.lower(`word`),_status)
+}
+    
+    
+
+        /**
+         * Forget all study history; the imported Memrise progress is restored.
+         */ fun `resetProgress`()
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_merkrise_core_fn_func_reset_progress(
+    
+        _status)
+}
+    
+    
  fun `sessionProgress`(): SessionProgress? {
             return FfiConverterOptionalTypeSessionProgress.lift(
     uniffiRustCall() { _status ->
@@ -1709,19 +2508,74 @@ public object FfiConverterSequenceTypeLevelInfo: FfiConverterRustBuffer<List<Lev
     )
     }
     
+ fun `setPace`(`p`: PaceSettings)
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_merkrise_core_fn_func_set_pace(
+    
+        
+        FfiConverterTypePaceSettings.lower(`p`),_status)
+}
+    
+    
+ fun `setStarred`(`word`: kotlin.UInt, `starred`: kotlin.Boolean)
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_merkrise_core_fn_func_set_starred(
+    
+        
+        FfiConverterUInt.lower(`word`),
+        FfiConverterBoolean.lower(`starred`),_status)
+}
+    
+    
 
         /**
-         * Build a quiz session of up to `size` random words (mixed MC + typing).
-         * `level` None studies the whole course; Some(index) studies just that chapter.
+         * Fast review (spec 2026-10-21-fast-review): timed choice cards over words already met, due ones
+         * first, never the same phrase twice, ordered easy to hard (fewest words first). Time per card =
+         * (8 s + 1 s per word) x (1 - 0.55 t), t = 0..1 across the session; the wrong options get more
+         * alike as t grows. Returns the number of cards.
          */
-    @Throws(CoreException::class) fun `startSession`(`level`: kotlin.UInt?, `size`: kotlin.UInt): kotlin.UInt {
+    @Throws(CoreException::class) fun `startFastSession`(`level`: kotlin.UInt?, `size`: kotlin.UInt, `now`: kotlin.Long): kotlin.UInt {
+            return FfiConverterUInt.lift(
+    uniffiRustCallWithError(CoreException) { _status ->
+    UniffiLib.uniffi_merkrise_core_fn_func_start_fast_session(
+    
+        
+        FfiConverterOptionalUInt.lower(`level`),
+        FfiConverterUInt.lower(`size`),
+        FfiConverterLong.lower(`now`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Build a session of up to `size` words: due cards first, then new words
+         * (capped by the pace settings), then not-yet-due practice so it is never empty.
+         * `level` None studies the whole course; Some(index) just that chapter.
+         * `now` is unix seconds shifted to local time (it also decides the streak day).
+         */
+    @Throws(CoreException::class) fun `startSession`(`level`: kotlin.UInt?, `size`: kotlin.UInt, `now`: kotlin.Long): kotlin.UInt {
             return FfiConverterUInt.lift(
     uniffiRustCallWithError(CoreException) { _status ->
     UniffiLib.uniffi_merkrise_core_fn_func_start_session(
     
         
         FfiConverterOptionalUInt.lower(`level`),
-        FfiConverterUInt.lower(`size`),_status)
+        FfiConverterUInt.lower(`size`),
+        FfiConverterLong.lower(`now`),_status)
+}
+    )
+    }
+    
+ fun `stats`(`now`: kotlin.Long): Stats {
+            return FfiConverterTypeStats.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_merkrise_core_fn_func_stats(
+    
+        
+        FfiConverterLong.lower(`now`),_status)
 }
     )
     }
@@ -1733,6 +2587,22 @@ public object FfiConverterSequenceTypeLevelInfo: FfiConverterRustBuffer<List<Lev
     
         
         FfiConverterString.lower(`userInput`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Magic wand (spec §5): the first k words of the sentence as tile indices. k grows by one per
+         * tap and never drops below the correct prefix already placed (compared by text, so either
+         * copy of a repeated word counts). Using it makes the card a miss. Empty if not an Arrange card.
+         */ fun `wandHint`(`placed`: List<kotlin.UInt>): List<kotlin.UInt> {
+            return FfiConverterSequenceUInt.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_merkrise_core_fn_func_wand_hint(
+    
+        
+        FfiConverterSequenceUInt.lower(`placed`),_status)
 }
     )
     }
