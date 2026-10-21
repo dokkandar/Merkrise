@@ -55,8 +55,11 @@ sh scripts/build-core-android.sh      # cargo-ndk -> android/app/src/main/jniLib
 sh scripts/gen-bindings.sh            # uniffi -> committed Kotlin bindings
 
 # 2. (re)bundle the data into app assets  [only needed if data changed]
-sh scripts/bundle-assets.sh           # copies capture/ seed.json + mp3 -> assets
-python3 -I scripts/build-lesson01.py  # merges resources/01 as level 52 + wavs
+sh scripts/bundle-assets.sh           # mp3 -> assets, then capture/seed-merged.json -> lessons -> assets/seed.json
+# capture/seed-merged.json (local-only) is the MASTER seed: A2 + Lesson 01, un-chunked, each level tagged `set`.
+# NEVER copy capture/seed.json over assets/seed.json (no Lesson 01 -> the owner's Lesson 01 progress is dropped).
+# A new word set = one more level (own `set` tag, unused level number) appended to seed-merged.json.
+# (build-lesson01.py is superseded: the merged master already contains Lesson 01.)
 
 # 3. build the APK
 cd android && JAVA_HOME=/opt/android-studio/jbr ./gradlew :app:assembleDebug
