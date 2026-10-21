@@ -1,358 +1,215 @@
-# German Trainer — Implementation Handoff Brief
+# Merkrise — Handoff
 
-**Audience:** an implementation agent (Claude Code) building this project from
-scratch. Assume **no** prior conversation context — everything you need is here.
-**Date written:** 2026-10-16
-**Author:** mentor/planning session (Opus 4.8)
-**Status:** design approved by the user; **not yet started** (empty project
-folder + this doc only).
+**For:** the next developer or agent taking over this project.
+**Updated:** 2026-10-21. Supersedes the original pre-build design brief (that
+earlier content now lives in the spec, `docs/superpowers/specs/`).
 
----
-
-## 0. TL;DR — what you're building and what to do first
-
-A **personal, offline Android app** for the user to study one Memrise
-community course ("A2 German: Beyond Beginner", course id **690189**). The
-course content is captured once from Memrise and then studied locally.
-
-Architecture the user explicitly chose: **Rust core compiled to an Android
-native library via the NDK, with a Kotlin + Jetpack Compose UI calling it over
-a uniffi bridge.** All the interesting logic (data, database, spaced-repetition
-scheduling, answer checking) lives in Rust; Kotlin only draws and handles input.
-
-**First three actions, in order:**
-1. **Set up the toolchain** (Section 9) — `cargo-ndk`, Rust Android targets, a
-   modern NDK. Verify a trivial Rust `.so` builds and loads in the app before
-   writing real code.
-2. **Capture the course data** (Section 8) — this is **time-sensitive**:
-   Memrise is sunsetting the community-courses site. Get `seed.sqlite` +
-   `seed.json` locked down early. Needs the user's Memrise login (they will
-   supply a session token — never ask for a password).
-3. **Build the Rust core engine desktop-first** (Sections 5–6), unit-tested on
-   the PC with no emulator, then bridge to Kotlin.
-
-**Do not skip the brainstorming/planning discipline:** before writing product
-code, confirm the plan with the user. This doc is the design brief; turn it
-into a concrete step plan (the `superpowers:writing-plans` skill) and get the
-user's go-ahead on milestones.
+Merkrise is a **personal, offline Android app** for studying German vocabulary —
+a self-hosted Memrise-style quiz built from the user's own captured
+*A2 German: Beyond Beginner* Memrise course (id 690189) plus a custom lesson.
+Rust core (NDK `.so`) + Kotlin UI bridged with **uniffi**. Personal use only, no
+publishing.
 
 ---
 
-## 1. Purpose & scope
+## 1. Current status — what works today
 
-- **Who:** the user, personally. Single user, their own device(s).
-- **Why:** study the A2 German vocabulary from the Memrise course, offline,
-  after the Memrise site goes away.
-- **Non-goals:** **No publishing, no app store, no distribution, no
-  monetization.** This matters: because it is strictly personal use of content
-  the user is capturing from their own Memrise account, there is no content-
-  rights work to do. If scope ever changes to sharing/publishing, STOP and
-  raise the content-licensing question first — the community course is
-  user-generated content under Memrise's terms.
-- **Platform:** Android (emulator first — see Section 9; the user has no
-  physical device connected). Keep the Rust core portable so a desktop build
-  stays possible, purely to make testing fast.
+A **functional study app**, verified running on the Pixel_9 emulator:
+
+- **Home = chapter list:** all **51 A2 Memrise chapters** (real titles + word
+  counts) plus **"Lesson 01 · Dating & Feelings" (64 words)**, and a
+  "Study all — random 20" button. **1,681 words total**, all with audio.
+- **Study a chapter or all** → a 20-question session mixing:
+  - **Multiple choice** (German term → pick the English meaning; 4 options),
+  - **Typing** (English → type the German; `ä ö ü ß` helper keys;
+    umlaut-tolerant: *über* = *ueber* = *uber*),
+  - **Audio** playback (native speaker) on each card.
+- Instant ✓/✗ **feedback** (shows the correct answer) and a **score / results**
+  screen. "Study again" / "Home".
+- Fully **offline** (all data + audio bundled in the APK).
+
+Runnable build: **`dist/merkrise-debug.apk`** (~121 MB).
+
+### Not done yet (the honest list)
+- **No persistence / no spaced repetition.** Study state is an in-memory `Vec`;
+  every session is a *random* draw. There is no SQLite, no SM-2 scheduler, no
+  review_state, and the user's captured Memrise progress is **not** imported yet.
+  This is the #1 next milestone (design already in the spec, §5/§6).
+- No settings screen, streaks, reversed-MC / audio-MC modes (the 5-stage design).
+- Lesson import is **build-time** (a script), not the runtime folder/TSV importer
+  described in the spec §16/§16.6.
+- UI is plain Android Views (no Jetpack Compose yet).
+- Deferred tech debt: 16 KB page-size alignment, `allowBackup=true`→false (real
+  data now ships), strip the release `.so`.
 
 ---
 
-## 2. Decisions locked with the user
+## 2. How to build & run
 
-| # | Decision |
-|---|----------|
-| D1 | Personal use only; no publishing. |
-| D2 | Architecture: **Rust core (NDK `.so`) + Kotlin/Jetpack Compose UI**, bridged with **uniffi**. |
-| D3 | Rust owns: data model, SQLite DB, SRS scheduler, answer checking, session building. Kotlin owns: screens, navigation, text input, audio playback, TTS. UI depends on core, never the reverse. |
-| D4 | Study modes: **SRS spaced repetition** (backbone), **typing test**, **multiple choice**, **listening/audio**. |
-| D5 | **Adaptive review speed based on word length** — longer words are treated as harder (reviewed sooner + more answer time), and this is **user-adjustable**. This is a deliberate, non-default feature the user asked for specifically. |
-| D6 | Content captured once from Memrise course **690189** using the user's own account, into a local DB the user owns. |
-| D7 | Project lives at **`/home/HSI/workspace/merkrise`** (ext4). **Never build on `/run/media/HSI/Data`** — that is an NTFS disk whose `ntfs3` driver corrupts freshly-built binaries under load (it SIGSEGV'd a Rust build there earlier). Keep `target/` on ext4. |
+**Prereqs** are already installed on this machine (see §6). From the repo root
+`/home/HSI/workspace/merkrise`:
 
-## 3. Open decisions (defaults chosen — fine to proceed, revisit if the user objects)
+```sh
+# 1. build the Rust core .so (x86_64) + Kotlin bindings
+sh scripts/build-core-android.sh      # cargo-ndk -> android/app/src/main/jniLibs
+sh scripts/gen-bindings.sh            # uniffi -> committed Kotlin bindings
 
-| # | Default | Note |
-|---|---------|------|
-| O1 | SRS algorithm = **SM-2** (classic Anki) behind a `Scheduler` trait. | Chosen for simplicity + teachability; swap to FSRS later without touching UI. |
-| O2 | App name = **Merkrise** (decided 2026-10-20; see spec D3). Rust crate `merkrise-core`, app id `com.hsi.merkrise`, folder `merkrise`. | Superseded — this O2 default no longer applies. |
-| O3 | SQLite owned by Rust via `rusqlite` (bundled). Kotlin never opens the DB. | Keeps single source of truth in core. |
-| O4 | Listening mode uses captured audio when present; **Android TTS** as fallback for words with no audio. | Confirm during capture whether 690189 ships audio. |
+# 2. (re)bundle the data into app assets  [only needed if data changed]
+sh scripts/bundle-assets.sh           # copies capture/ seed.json + mp3 -> assets
+python3 -I scripts/build-lesson01.py  # merges resources/01 as level 52 + wavs
+
+# 3. build the APK
+cd android && JAVA_HOME=/opt/android-studio/jbr ./gradlew :app:assembleDebug
+# -> android/app/build/outputs/apk/debug/app-debug.apk
+```
+`./gradlew assembleDebug` also re-runs the `.so` build automatically (a Gradle
+`buildRustCore` task wired into `preBuild`), so step 1 is optional once set up.
+
+**Run on the emulator** (the user does this from *their* Android Studio terminal,
+which has the display — Claude's shell is headless/Wayland and the headless
+emulator is sluggish). One-liner:
+
+```sh
+/home/HSI/Android/Sdk/emulator/emulator -avd Pixel_9 >/tmp/emu.log 2>&1 & \
+ADB=/home/HSI/Android/Sdk/platform-tools/adb; $ADB wait-for-device; \
+until [ "$($ADB shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = 1 ]; do sleep 2; done; \
+$ADB install -r /home/HSI/workspace/merkrise/dist/merkrise-debug.apk; \
+$ADB shell am start -n com.hsi.merkrise/.MainActivity
+```
+
+**Core tests (desktop, fast):** `cargo test -p merkrise-core` (6 tests).
+
+---
+
+## 3. Repository & data layout — everything is in this folder
+
+```
+/home/HSI/workspace/merkrise/
+├─ HANDOFF.md              ← this file
+├─ Cargo.toml              ← Rust workspace (members = ["core"])
+├─ core/                   ← Rust crate `merkrise-core` (the engine)
+│  ├─ Cargo.toml           ← uniffi 0.32.2, serde, serde_json, thiserror, fastrand
+│  └─ src/{lib.rs, bin/uniffi-bindgen.rs}, uniffi.toml
+├─ android/                ← Gradle app (Kotlin, plain Views, com.hsi.merkrise)
+│  └─ app/src/main/{java/com/hsi/merkrise/MainActivity.kt,
+│                   java/com/hsi/merkrise/core/merkrise_core.kt (generated),
+│                   AndroidManifest.xml, jniLibs/ (.so, git-ignored),
+│                   assets/ (bundled data, git-ignored — see below)}
+├─ scripts/                ← build-core-android.sh, gen-bindings.sh,
+│                            bundle-assets.sh, build-lesson01.py
+├─ docs/                   ← specs/plans (design authority) + examples/
+├─ dist/                   ← built APKs (git-ignored)
+├─ capture/   *DATA*       ← the captured A2 course  (git-ignored, LOCAL ONLY)
+├─ resources/ *DATA*       ← Lesson 01 source folder  (git-ignored, LOCAL ONLY)
+└─ target/                 ← Rust build cache (git-ignored, regenerable)
+```
+
+### ⚠ The data is LOCAL-ONLY — keep it with this folder
+The **code and docs are on GitHub** (`git@github.com:dokkandar/Merkrise.git`,
+branch `main`). The **data and voice files are git-ignored and are NOT on GitHub**
+(they are large and personal). They exist only inside this folder. **A fresh git
+clone will NOT have them.** Do not delete `capture/` or `resources/`, and back
+them up separately — the captured audio in particular is irreplaceable (Memrise
+is sunsetting the source site).
+
+### The data assets
+| Location | What | Size |
+|---|---|---|
+| `capture/seed.json` | **A2 course dataset** — 51 levels, **1,617 words** (term, meaning, part-of-speech, all-forms, literal, audio refs, typing alternatives, and the user's Memrise progress) | 1.9 MB |
+| `capture/raw/level_001..051.json` | raw API responses (backup) | 15 MB |
+| `capture/audio/` | **A2 voice files — 3,178 mp3** (native speakers, 2 per word) | 118 MB |
+| `resources/01/Files/` | Lesson 01 text: `N.txt` headword + `N.1/N.2.txt` example sentences (64 words) | — |
+| `resources/01/{simon,helmut}/` | Lesson 01 **voice files — 383 wav** (2 speakers) | 62 MB |
+| `android/app/src/main/assets/seed.json` | **bundled, merged** dataset: 52 levels / **1,681 words** (A2 + Lesson 01). *Derived* — regenerate with the §2 scripts. | 1.9 MB |
+| `android/app/src/main/assets/audio/` | bundled voices: 3,178 mp3 + 64 `l01_*.wav` = **3,242 files** | 124 MB |
+
+`capture/` is the master A2 source; `resources/01` is the master Lesson 01 source;
+`android/app/src/main/assets/` is a derived copy that ships in the APK.
 
 ---
 
 ## 4. Architecture
 
-Three components:
-
 ```
-┌─────────────────────────────┐        ┌──────────────────────────┐
-│ Android app (Kotlin/Compose)│  uniffi │  german-core  (Rust)     │
-│  screens, nav, text input,  │◄───────►│  data model, SQLite,     │
-│  audio playback, TTS        │  (JNI)  │  SRS scheduler, answer    │
-│                             │         │  check, session builder  │
-└─────────────────────────────┘        └──────────────┬───────────┘
-                                                       │ rusqlite
-                                                 ┌─────▼──────┐
-                                                 │ app.sqlite │  (on device)
-                                                 └────────────┘
-
-   memgrab (Rust CLI, run once on PC) ──► seed.sqlite + seed.json
-          │ (Memrise course 690189, user's session)
-          └─► bundled into app assets / imported on first run
+Android app (Kotlin/Compose-free Views)  --uniffi/JNI-->  merkrise-core (Rust)
+  MainActivity: home chapter list, quiz screens, audio                |
+                                                                 in-memory model
+                                                                 (Vec<Word>, no DB yet)
+  bundled assets: seed.json + audio/*  --load on first run-->   loaded via load_seed(json)
 ```
 
-**Runtime data flow:** Compose screen → calls core (`start_session`,
-`next_card`, `submit_answer`) → core runs SRS logic + updates SQLite → returns
-the next `Card` and/or an `AnswerResult` → Compose renders. Audio: core returns
-an audio reference/path; Kotlin plays it (`MediaPlayer`) or synthesizes via
-`TextToSpeech`.
+**Rust owns all logic** (data model, quiz/session building, answer checking,
+scoring); **Kotlin only draws and plays audio**. The dependency points one way:
+UI → core, never the reverse.
 
-**Workspace layout (proposed):**
+### uniffi-exported core API (`core/src/lib.rs`)
 ```
-merkrise/
-├─ HANDOFF.md                 ← this file
-├─ docs/                      ← specs, plans, notes
-├─ core/                      ← Rust crate `german-core` (cdylib + rlib)
-│  ├─ Cargo.toml
-│  └─ src/{lib.rs, model.rs, db.rs, srs.rs, session.rs, answer.rs, ffi.rs}
-├─ memgrab/                   ← Rust CLI to pull Memrise data (bin crate)
-├─ android/                   ← Gradle project (Kotlin + Compose)
-│  └─ app/src/main/...        ← uniffi-generated bindings land here
-└─ Cargo.toml                 ← workspace (members = ["core", "memgrab"])
+core_version() -> String
+load_seed(json) -> u32                 // parse bundled seed.json, returns word count
+word_count() -> u32 ; get_card(i) -> WordCard?    // simple browse
+levels() -> Vec<LevelInfo>             // chapter list (index, title, count)
+start_session(level: Option<u32>, size) -> u32    // None = whole course
+current_question() -> Question?        // {position,total,kind,prompt,prompt_audio,choices}
+submit_answer(input) -> AnswerFeedback // {correct, expected, finished}
+session_progress() -> SessionProgress? // {total, answered, correct, finished}
 ```
-(Keep the Android Gradle project either nested at `android/` or as a sibling;
-pick whichever makes `cargo-ndk` output paths cleanest and document it.)
+Enums/records: `QKind{MultipleChoice,Typing}`, `WordCard`, `Question`,
+`AnswerFeedback`, `SessionProgress`, `LevelInfo`, `CoreError`.
+Answer checking normalizes case/space and folds `ä→ae ö→oe ü→ue ß→ss`, and
+accepts the captured `typing_alternatives`.
+
+### How the data was obtained (for re-capture if ever needed)
+A2 course was captured once from the live Memrise API with the user's session
+cookie: `POST community-courses.memrise.com/v1.25/learning_sessions/preview/`
+with body `{"session_source_id":690189,"session_source_type":
+"course_id_and_level_index","session_source_sub_index":<1..51>}`. Audio on
+`static.memrise.com` is public. (The throwaway capture scripts were not kept;
+`capture/` holds the results.) The old `/v1.17/` API is gone (410).
 
 ---
 
-## 5. Rust core — API, model, schema
-
-### 5.1 uniffi-exported API (sketch — refine as you build)
-Use **uniffi** proc-macros (`#[uniffi::export]`, `#[derive(uniffi::Record/Enum)]`).
-
-```
-fn init(db_path: String) -> Result<(), CoreError>
-fn import_seed(seed_path: String) -> Result<ImportStats, CoreError>  // idempotent
-fn due_count() -> u32
-fn start_session(mode: ReviewMode, max_cards: u32) -> Result<(), CoreError>
-fn next_card() -> Option<Card>
-fn submit_answer(card_id: u64, user_input: String) -> AnswerResult
-fn skip_card(card_id: u64)
-fn end_session() -> SessionSummary
-fn set_pace_settings(s: PaceSettings)
-fn get_pace_settings() -> PaceSettings
-fn stats() -> Stats
-```
-
-### 5.2 Core types
-```
-Word { id, term /*German*/, meaning /*English*/, pos: Option<String>,
-       audio_path: Option<String>, level_id, position }
-ReviewMode { Srs, Typing, MultipleChoice, Listening }
-PromptMode { ShowTerm, ShowMeaning, PlayAudio }   // what the card presents
-Card { word_id, prompt_mode, prompt_text, audio_path: Option<String>,
-       choices: Option<Vec<String>>,  // populated for MultipleChoice
-       answer_time_ms: u32 }          // time allowance, length-adjusted
-AnswerResult { correct: bool, expected: String, normalized_input: String,
-               grade: u8, next_due_epoch: i64 }
-PaceSettings { base_new_per_day: u32, base_interval_scale: f32,
-               length_weight: f32 /*0.0 = ignore length … 1.0 = strong*/ }
-SessionSummary { reviewed, correct, new_introduced, duration_ms }
-Stats { total_words, learned, due_today, streak_days }
-```
-
-### 5.3 SQLite schema (owned by Rust)
-```
-levels(id INTEGER PK, course_id INTEGER, position INTEGER, title TEXT)
-words(id INTEGER PK, level_id INTEGER, position INTEGER,
-      term TEXT, meaning TEXT, pos TEXT NULL, audio_path TEXT NULL,
-      attrs_json TEXT NULL)
-review_state(word_id INTEGER PK REFERENCES words(id),
-      ease REAL DEFAULT 2.5, interval_days REAL DEFAULT 0, reps INTEGER DEFAULT 0,
-      lapses INTEGER DEFAULT 0, due_epoch INTEGER DEFAULT 0,
-      stage TEXT DEFAULT 'new',   -- new | mc | typing | recall | known
-      last_grade INTEGER NULL, last_seen_epoch INTEGER NULL)
-settings(key TEXT PK, value TEXT)   -- holds PaceSettings etc.
-session_log(id INTEGER PK, started_epoch INTEGER, mode TEXT, summary_json TEXT)
-```
+## 5. Toolchain (verified on this machine)
+- Rust 1.95, `cargo-ndk` 4.1.2, **NDK r27c** (`27.2.12479018`, at
+  `$ANDROID_HOME/ndk/`), uniffi **0.32.2** (pin the crate and bindgen to the same
+  version or Kotlin panics on a checksum mismatch).
+- Android: AGP **8.6.0**, Gradle **8.7** (cached), Kotlin **1.9.24**, JNA aar,
+  compileSdk/targetSdk **35**, minSdk **26**, ABI **x86_64** (emulator only; add
+  `arm64-v8a` for real devices). `JAVA_HOME=/opt/android-studio/jbr` (JDK 21).
+- `ANDROID_HOME=/home/HSI/Android/Sdk`, emulator AVD **Pixel_9**.
+- **Build on ext4 only** (`/home/HSI/workspace/merkrise`); never on the NTFS
+  `/run/media/HSI/Data` (its driver corrupts fresh binaries).
 
 ---
 
-## 6. SRS engine spec
-
-- **Base = SM-2.** Per card: `ease` (default 2.5, floor 1.3), `interval_days`,
-  `reps`, `lapses`, `due_epoch`. On a correct answer advance the interval
-  (`reps 0→1 day, 1→6 days, else interval*ease`); on a wrong answer reset reps
-  and shorten (lapse). Put this behind a `trait Scheduler` so FSRS can replace
-  it later.
-- **Word-length modifier (feature D5):**
-  - Compute `len_factor` from the German term length (e.g. normalize character
-    count against the course's mean length → a multiplier roughly in `[0.6,
-    1.6]`). Longer = harder.
-  - Apply to the scheduled interval: `interval *= (1 - length_weight) +
-    length_weight / len_factor` so longer words become due **sooner** (smaller
-    interval). With `length_weight = 0` the rule is off and it's pure SM-2.
-  - Apply to the per-card **answer-time allowance** in timed modes:
-    `answer_time_ms = base_time * len_factor` (longer words get more time).
-  - Both governed by `PaceSettings` so the user tunes `length_weight` and base
-    pace in a settings screen.
-- **Session building:** today's due cards (`due_epoch <= now`) + up to
-  `base_new_per_day` new words. New words graduate through stages
-  `new → mc → typing → recall → known` (the Memrise-style progression), which
-  also selects which sub-mode the SRS review presents.
-- **Must be unit-tested on desktop** (deterministic clock injected) — this is
-  the main reason the logic lives in Rust.
+## 6. Design docs (deeper detail)
+- **Spec (design authority):** `docs/superpowers/specs/2026-10-20-merkrise-v1-design.md`
+  — full schema, the SM-2 + word-length SRS design, the 5-stage Memrise
+  progression, Memrise→SM-2 progress-import mapping, the bulk-import format
+  (§16) and folder lesson-package format (§16.6).
+- **M1 plan:** `docs/superpowers/plans/2026-10-20-merkrise-m1-toolchain-bridge.md`.
+- **Import examples:** `docs/examples/` (sample `.tsv` + how-to).
 
 ---
 
-## 7. Study modes (UI ↔ core)
+## 7. Next steps (recommended order)
+1. **Persistence + spaced repetition** (the big one): add `rusqlite`, a
+   `review_state` table, the SM-2 + word-length scheduler and the
+   new→…→known stage progression (spec §5/§6); import the user's captured
+   `memrise_progress` so mastered words aren't re-tested. Replaces today's
+   random sessions.
+2. Settings (pace / length-weight), streaks, progress; the reversed-MC and
+   audio-MC modes.
+3. Runtime importers: the folder lesson-package (§16.6) and TSV bulk-import
+   (§16), so new lessons can be added on-device without the build-time script.
+4. Clear the deferred debt: 16 KB alignment (`-C link-arg=-Wl,-z,max-page-size=16384`
+   + a 16 KB-aligned JNA), `allowBackup=false`, strip the release `.so`.
+   Consider migrating the UI to Jetpack Compose.
 
-- **SRS review** — the default. Core returns due/new cards; the card's `stage`
-  decides the sub-mode shown (new → multiple choice, mid → typing, mature →
-  free recall). This *is* the main loop.
-- **Typing** — Compose text field; send raw text to `submit_answer`. Core
-  normalizes: trim, case-fold, and treat `ä/ö/ü/ß` ⇄ `ae/oe/ue/ss` as
-  equivalent (German learners type both). Report the canonical expected answer.
-- **Multiple choice** — core fills `Card.choices` with the right answer + N
-  plausible distractors drawn from the same course/level; Compose renders
-  buttons.
-- **Listening** — `prompt_mode = PlayAudio`; Compose plays `audio_path`
-  (`MediaPlayer`) or, if absent, speaks the German via Android `TextToSpeech`
-  (German locale); user recalls the meaning.
-
----
-
-## 8. Content capture (`memgrab`) — TIME-SENSITIVE
-
-The course page at
-`https://community-courses.memrise.com/community/course/690189/a2-german-beyond-beginner/`
-is a **JavaScript single-page app** — the raw HTML has no vocabulary; the data
-is fetched from a backend the frontend calls. So:
-
-1. **Discover the endpoint (investigative, do with the user):** have the user
-   open the course **while logged in**, open browser DevTools → Network, and
-   capture the XHR/fetch request(s) that return the level/word JSON (and the
-   request headers, especially the session cookie — likely `sessionid` — and
-   any CSRF token). Record the exact URL shape and pagination (courses are
-   split into "levels"; each level lists items with columns = term, meaning,
-   and attribute/audio columns).
-2. **Replicate in Rust** (`reqwest` + `serde_json`): authenticate with the
-   user-supplied session cookie, walk every level, extract `term`, `meaning`,
-   any part-of-speech/attribute columns, and **audio file URLs**; download the
-   audio files locally.
-3. **Output:** `seed.sqlite` (the schema in 5.3, `review_state` empty) **and**
-   `seed.json` (a human-readable backup the user keeps forever). Put audio in
-   `assets/audio/`.
-4. **Security — mandatory:**
-   - **Never** ask the user for their Memrise password, and never put
-     credentials in this chat or in committed files.
-   - Read the session token from an **environment variable or a local,
-     git-ignored file** the user creates (e.g. `memgrab/.secret.env`).
-   - Add `*.secret*`, `.env`, and any token file to `.gitignore` from the
-     start.
-   - The token is the user's — treat captured data as personal data.
-
-If the endpoint can't be reached (site already down / login blocked), fall back
-to: user exports via Memrise's own "download" if available, or the
-`decks`/community archive, or a manual DevTools JSON copy. Flag to the user
-immediately if capture is at risk — the data is the one irreplaceable input.
-
----
-
-## 9. Environment — verified state (2026-10-16) and what to install
-
-**Already present on this machine (ext4 `/home/HSI`):**
-- Rust `rustc`/`cargo` **1.95.0**, `rustup` 1.29.0.
-- Android Studio at **`/opt/android-studio`** (bundled JDK: OpenJDK **21** at
-  `/opt/android-studio/jbr`). Use that JBR as `JAVA_HOME` for Gradle.
-- Android SDK at **`/home/HSI/Android/Sdk`**
-  - platforms: **android-34, android-35, android-36.1**
-  - build-tools: 34.0.0, 35.0.0, 36.1.0, 37.0.0
-  - `adb` at `$SDK/platform-tools/adb` (works; **no physical device**
-    connected)
-  - emulator AVD **`Pixel_9`** exists (`~/.android/avd`) — this is the test
-    target.
-  - **NDK: only `21.4.7075529`** — old; r21 dropped `libgcc` handling that
-    fights modern Rust. **Install a current NDK (r26 or r27)** via Android
-    Studio's SDK Manager (or `sdkmanager "ndk;27.x"`; note `cmdline-tools`
-    appeared empty, so the GUI SDK Manager is the reliable route).
-
-**Must install / configure (the "setup phase"):**
-- Rust Android targets: `rustup target add aarch64-linux-android
-  x86_64-linux-android armv7-linux-androideabi i686-linux-android`
-  (x86_64 is needed for the Pixel_9 emulator; aarch64 for real ARM devices).
-- `cargo install cargo-ndk`.
-- **uniffi**: add `uniffi` to the core crate; set up the Gradle plugin /
-  binding-generation step so Kotlin bindings are produced on build.
-- Export `ANDROID_HOME=/home/HSI/Android/Sdk` and
-  `ANDROID_NDK_HOME=$ANDROID_HOME/ndk/<version>` for builds.
-- **Prove the pipeline with a hello-world `.so`** (one exported function
-  returning a string, shown on screen via uniffi) **before** building the real
-  engine. Do not build features on an unproven bridge.
-
----
-
-## 10. Build & run workflow (emulator)
-
-- Build the Rust `.so` for the emulator ABI: `cargo ndk -t x86_64 -o
-  android/app/src/main/jniLibs build --release` (and `-t arm64-v8a` for real
-  devices). Confirm the final `cargo-ndk` invocation and output path once the
-  Gradle project exists.
-- Boot the emulator headlessly from here:
-  `$SDK/emulator/emulator -avd Pixel_9 -no-window -no-audio -gpu swiftshader_indirect &`
-  then wait for `adb wait-for-device` + `sys.boot_completed`.
-- Install/run: Gradle `:app:installDebug`, then
-  `adb shell am start -n com.hsi.germantrainer/.MainActivity`.
-- Logs: `adb logcat`. Rust panics/logs surface via the `android_logger` crate —
-  wire it in the core's `init`.
-
-## 11. Testing
-
-- **Core (desktop, no emulator):** unit tests for SM-2 math, the word-length
-  modifier, answer normalization (umlaut/ß equivalence), and distractor
-  generation. Inject a mock clock so scheduling is deterministic. This is the
-  bulk of the correctness work — do it here, fast.
-- **Bridge:** a tiny desktop harness (or `cargo test`) that calls the core the
-  way Kotlin will, to catch API-shape problems before the emulator.
-- **App:** smoke-test each screen on `Pixel_9`; verify one full SRS session,
-  typing with umlauts, a multiple-choice round, and audio/TTS playback.
-
-## 12. Suggested phased plan (turn into a real plan via writing-plans)
-
-1. **Setup & bridge** — install toolchain (Section 9); workspace + `core` crate
-   + nested Gradle app; hello-world `.so` through uniffi shown on the emulator.
-2. **Capture** — `memgrab` → `seed.sqlite` + `seed.json` (+ audio). Lock the
-   data down. (Can run in parallel with step 1; it's the time-sensitive one.)
-3. **Core engine** — model, DB, SM-2 + word-length rule, answer checking,
-   session builder; fully unit-tested on desktop.
-4. **Study UI** — Compose screens for SRS loop, typing, multiple choice,
-   listening; settings screen for pace/length-weight; progress/stats.
-5. **Polish** — audio/TTS, streaks, daily new-card cap, import-on-first-run.
-
-Each phase ends with something runnable on the emulator and the user's sign-off.
-
-## 13. Gotchas / constraints
-
-- **NTFS:** never put `target/` or build output on `/run/media/HSI/Data`
-  (ntfs3 corrupts fresh binaries under load). Everything stays on ext4.
-- **NDK r21 is too old** for smooth modern Rust Android linking — install r26/r27
-  first; don't waste time fighting r21 linker errors.
-- **Memrise is sunsetting** the community site — capture data early; it is the
-  one input you cannot reconstruct.
-- **uniffi + Compose** binding/build wiring is the fiddliest integration point —
-  prove it with hello-world before real features.
-- **German normalization:** ä/ö/ü/ß ⇄ ae/oe/ue/ss and case/whitespace must be
-  handled in `submit_answer`, or typing mode will feel broken.
-- **No physical device:** target the `Pixel_9` emulator (x86_64 ABI) for the dev
-  loop.
-- **Secrets:** Memrise session token via env/git-ignored file only; never
-  committed, never in chat.
-
-## 14. Conventions
-
-- Keep logic in Rust; Kotlin is a thin view layer. If you're tempted to put
-  scheduling/answer logic in Kotlin, that's a smell — it belongs in `core`.
-- Commit the design/plan docs under `docs/`. Initialize git early;
-  `.gitignore` must exclude `target/`, `*.so`, secrets, captured personal data,
-  and large audio if the user prefers.
-- This is a learning project for the user (they want to understand the NDK
-  bridge) — favor clear, well-commented, idiomatic code over clever shortcuts,
-  and explain the bridge wiring in `docs/`.
+## 8. Gotchas
+- **uniffi version skew** → Kotlin checksum panic; keep crate + bindgen at 0.32.2.
+- **Android 15 edge-to-edge** (targetSdk 35) draws under the status bar — the app
+  uses `fitsSystemWindows` + `NoActionBar`; keep that or top content hides.
+- The emulator's **16 KB compatibility** popup on launch is harmless (tap OK).
+- Lesson 01 English meanings were **translated by Claude** (see
+  `scripts/build-lesson01.py` `EN` dict) — the user may want to review them.
+- Regenerating assets re-copies 124 MB; `build-lesson01.py` is idempotent.
