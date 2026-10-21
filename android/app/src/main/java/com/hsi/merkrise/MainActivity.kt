@@ -1,105 +1,198 @@
 package com.hsi.merkrise
 
 import android.app.Activity
+import android.graphics.Color
+import android.graphics.Typeface
 import android.media.MediaPlayer
 import android.os.Bundle
+import android.text.InputType
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
+import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
-import com.hsi.merkrise.core.getCard
+import com.hsi.merkrise.core.AnswerFeedback
+import com.hsi.merkrise.core.QKind
+import com.hsi.merkrise.core.Question
+import com.hsi.merkrise.core.currentQuestion
 import com.hsi.merkrise.core.loadSeed
-import com.hsi.merkrise.core.wordCount
+import com.hsi.merkrise.core.sessionProgress
+import com.hsi.merkrise.core.startSession
+import com.hsi.merkrise.core.submitAnswer
 
 /**
- * First real study screen: the Rust core loads the captured A2 German course
- * (bundled seed.json) and hands back a WordCard; Kotlin shows the German term,
- * English meaning, part of speech, plays the native-speaker audio, and steps to
- * the next word.
+ * Merkrise study app. All quiz logic (session building, answer checking,
+ * scoring) lives in the Rust core; this Activity only draws the current
+ * screen (home -> question -> feedback -> results) and plays audio.
  */
 class MainActivity : Activity() {
-    private var index = 0
-    private var total = 0
-    private var currentAudio: String? = null
+    private lateinit var root: LinearLayout
+    private lateinit var scroll: ScrollView
     private var player: MediaPlayer? = null
-
-    private lateinit var progressView: TextView
-    private lateinit var termView: TextView
-    private lateinit var posView: TextView
-    private lateinit var meaningView: TextView
+    private var total = 0
+    private val sessionSize = 20u
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        scroll = ScrollView(this).apply {
+            // Android 15 draws edge-to-edge; inset below the status/nav bars.
+            fitsSystemWindows = true
+        }
+        root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(56, 40, 56, 72)
+            // take initial focus so a text field doesn't auto-scroll the prompt away
+            isFocusableInTouchMode = true
+        }
+        scroll.addView(root)
+        setContentView(scroll)
 
-        // Load the bundled course data into the Rust core.
         total = try {
             val json = assets.open("seed.json").bufferedReader().use { it.readText() }
             loadSeed(json).toInt()
         } catch (e: Exception) {
             0
         }
+        showHome()
+    }
 
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            setPadding(56, 56, 56, 56)
-        }
-        progressView = TextView(this).apply { textSize = 14f; gravity = Gravity.CENTER }
-        termView = TextView(this).apply { textSize = 34f; gravity = Gravity.CENTER }
-        posView = TextView(this).apply { textSize = 14f; gravity = Gravity.CENTER }
-        meaningView = TextView(this).apply { textSize = 22f; gravity = Gravity.CENTER }
+    // ---- small view helpers ----
+    private fun clear() = root.removeAllViews()
+    private fun afterRender() {
+        root.requestFocus()               // keep focus off text fields
+        scroll.post { scroll.scrollTo(0, 0) } // always show the prompt at top
+    }
+    private fun gap(h: Int) = View(this).apply { layoutParams = ViewGroup.LayoutParams(1, h) }
+    private fun label(s: String, size: Float, bold: Boolean = false) = TextView(this).apply {
+        text = s
+        textSize = size
+        gravity = Gravity.CENTER
+        if (bold) setTypeface(typeface, Typeface.BOLD)
+    }
+    private fun wideButton(caption: String, onClick: () -> Unit) = Button(this).apply {
+        text = caption
+        isAllCaps = false
+        layoutParams = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+        )
+        setOnClickListener { onClick() }
+    }
 
-        val playBtn = Button(this).apply {
-            text = "▶  Play audio"
-            setOnClickListener { playCurrentAudio() }
+    // ---- screens ----
+    private fun showHome() {
+        clear()
+        root.gravity = Gravity.CENTER
+        root.addView(label("Merkrise", 40f, true))
+        root.addView(gap(12))
+        root.addView(label("A2 German · $total words", 16f))
+        root.addView(gap(48))
+        root.addView(wideButton("Start studying ($sessionSize words)") {
+            if (total == 0) return@wideButton
+            startSession(sessionSize)
+            showQuestion()
+        })
+        afterRender()
+    }
+
+    private fun showQuestion() {
+        val q = currentQuestion() ?: run { showEnd(); return }
+        clear()
+        root.gravity = Gravity.TOP
+        val score = sessionProgress()?.correct ?: 0u
+        root.addView(label("Question ${q.position} / ${q.total}        Score $score", 14f))
+        root.addView(gap(28))
+        val hint = if (q.kind == QKind.MULTIPLE_CHOICE) "German — pick the meaning"
+        else "English — type the German"
+        root.addView(label(hint, 13f))
+        root.addView(gap(8))
+        root.addView(label(q.prompt, 30f, true))
+        root.addView(gap(12))
+
+        val audio = q.promptAudio
+        if (audio != null) {
+            root.addView(wideButton("▶  Play audio") { playAudio(audio) })
         }
-        val nextBtn = Button(this).apply {
-            text = "Next word  ▶"
-            setOnClickListener {
-                if (total > 0) { index = (index + 1) % total; showCard() }
+        root.addView(gap(28))
+
+        when (q.kind) {
+            QKind.MULTIPLE_CHOICE ->
+                for (choice in q.choices) {
+                    root.addView(wideButton(choice) { onAnswered(submitAnswer(choice), choice) })
+                    root.addView(gap(10))
+                }
+            QKind.TYPING -> {
+                val input = EditText(this).apply {
+                    setHint("type the German word")
+                    inputType = InputType.TYPE_CLASS_TEXT
+                    layoutParams = LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+                    )
+                }
+                root.addView(input)
+                root.addView(gap(8))
+                val umlauts = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER
+                }
+                for (ch in listOf("ä", "ö", "ü", "ß")) {
+                    umlauts.addView(Button(this).apply {
+                        text = ch; isAllCaps = false
+                        setOnClickListener { input.append(ch) }
+                    })
+                }
+                root.addView(umlauts)
+                root.addView(gap(14))
+                root.addView(wideButton("Check") {
+                    val typed = input.text.toString()
+                    onAnswered(submitAnswer(typed), typed)
+                })
             }
         }
-
-        root.addView(progressView)
-        root.addView(spacer(28))
-        root.addView(termView)
-        root.addView(posView)
-        root.addView(spacer(14))
-        root.addView(meaningView)
-        root.addView(spacer(40))
-        root.addView(playBtn)
-        root.addView(spacer(10))
-        root.addView(nextBtn)
-        setContentView(root)
-
-        showCard()
+        afterRender()
     }
 
-    private fun spacer(h: Int) = View(this).apply {
-        layoutParams = ViewGroup.LayoutParams(1, h)
-    }
-
-    private fun showCard() {
-        if (total == 0) {
-            progressView.text = ""
-            termView.text = "No words loaded"
-            posView.text = ""
-            meaningView.text = ""
-            currentAudio = null
-            return
+    private fun onAnswered(fb: AnswerFeedback, chosen: String) {
+        clear()
+        root.gravity = Gravity.CENTER
+        val ok = fb.correct
+        root.addView(label(if (ok) "✓  Correct!" else "✗  Not quite", 28f, true).apply {
+            setTextColor(if (ok) Color.rgb(27, 120, 40) else Color.rgb(170, 30, 30))
+        })
+        root.addView(gap(18))
+        if (ok) {
+            root.addView(label(fb.expected, 22f))
+        } else {
+            root.addView(label("Correct answer", 14f))
+            root.addView(label(fb.expected, 24f, true))
+            root.addView(gap(10))
+            root.addView(label("you typed: $chosen", 13f))
         }
-        val card = getCard(index.toUInt()) ?: return
-        progressView.text = "Word ${index + 1} / $total   ·   Level ${card.level}"
-        termView.text = card.term
-        posView.text = card.pos ?: ""
-        meaningView.text = card.meaning
-        currentAudio = card.audioFile
+        root.addView(gap(36))
+        root.addView(wideButton(if (fb.finished) "See results" else "Next question") {
+            if (fb.finished) showEnd() else showQuestion()
+        })
+        afterRender()
     }
 
-    private fun playCurrentAudio() {
-        val file = currentAudio ?: return
+    private fun showEnd() {
+        val p = sessionProgress()
+        clear()
+        root.gravity = Gravity.CENTER
+        root.addView(label("Session complete", 30f, true))
+        root.addView(gap(20))
+        root.addView(label("You scored", 16f))
+        root.addView(label("${p?.correct ?: 0u} / ${p?.total ?: 0u}", 44f, true))
+        root.addView(gap(40))
+        root.addView(wideButton("Study again") { startSession(sessionSize); showQuestion() })
+        root.addView(gap(10))
+        root.addView(wideButton("Home") { showHome() })
+        afterRender()
+    }
+
+    private fun playAudio(file: String) {
         try {
             player?.release()
             val afd = assets.openFd("audio/$file")
@@ -111,7 +204,7 @@ class MainActivity : Activity() {
                 start()
             }
         } catch (_: Exception) {
-            // missing/unreadable audio — ignore for now
+            // ignore missing/unreadable audio
         }
     }
 

@@ -676,9 +676,17 @@ internal object IntegrityCheckingUniffiLib {
     internal fun ensureInitialized() = Unit
     external fun uniffi_merkrise_core_checksum_func_core_version(
     ): Int
+    external fun uniffi_merkrise_core_checksum_func_current_question(
+    ): Int
     external fun uniffi_merkrise_core_checksum_func_get_card(
     ): Int
     external fun uniffi_merkrise_core_checksum_func_load_seed(
+    ): Int
+    external fun uniffi_merkrise_core_checksum_func_session_progress(
+    ): Int
+    external fun uniffi_merkrise_core_checksum_func_start_session(
+    ): Int
+    external fun uniffi_merkrise_core_checksum_func_submit_answer(
     ): Int
     external fun uniffi_merkrise_core_checksum_func_word_count(
     ): Int
@@ -699,10 +707,18 @@ internal object UniffiLib {
     internal fun ensureInitialized() = Unit
     external fun uniffi_merkrise_core_fn_func_core_version(uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    external fun uniffi_merkrise_core_fn_func_current_question(uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     external fun uniffi_merkrise_core_fn_func_get_card(`index`: Int,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_merkrise_core_fn_func_load_seed(`json`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Int
+    external fun uniffi_merkrise_core_fn_func_session_progress(uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_merkrise_core_fn_func_start_session(`size`: Int,uniffi_out_err: UniffiRustCallStatus, 
+    ): Int
+    external fun uniffi_merkrise_core_fn_func_submit_answer(`userInput`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     external fun uniffi_merkrise_core_fn_func_word_count(uniffi_out_err: UniffiRustCallStatus, 
     ): Int
     external fun ffi_merkrise_core_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus, 
@@ -824,13 +840,25 @@ private fun uniffiCheckContractApiVersion(lib: IntegrityCheckingUniffiLib) {
 }
 @Suppress("UNUSED_PARAMETER")
 private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
-    if ((lib.uniffi_merkrise_core_checksum_func_core_version() and 0xFFFF) != 4874) {
+    if ((lib.uniffi_merkrise_core_checksum_func_core_version() and 0xFFFF) != 36622) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_merkrise_core_checksum_func_current_question() and 0xFFFF) != 62473) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_merkrise_core_checksum_func_get_card() and 0xFFFF) != 22020) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_merkrise_core_checksum_func_load_seed() and 0xFFFF) != 12597) {
+    if ((lib.uniffi_merkrise_core_checksum_func_load_seed() and 0xFFFF) != 24762) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_merkrise_core_checksum_func_session_progress() and 0xFFFF) != 5867) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_merkrise_core_checksum_func_start_session() and 0xFFFF) != 1914) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_merkrise_core_checksum_func_submit_answer() and 0xFFFF) != 63944) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_merkrise_core_checksum_func_word_count() and 0xFFFF) != 38275) {
@@ -955,6 +983,29 @@ public object FfiConverterUInt: FfiConverter<UInt, Int> {
 /**
  * @suppress
  */
+public object FfiConverterBoolean: FfiConverter<Boolean, Byte> {
+    override fun lift(value: Byte): Boolean {
+        return value.toInt() != 0
+    }
+
+    override fun read(buf: ByteBuffer): Boolean {
+        return lift(buf.get())
+    }
+
+    override fun lower(value: Boolean): Byte {
+        return if (value) 1.toByte() else 0.toByte()
+    }
+
+    override fun allocationSize(value: Boolean) = 1UL
+
+    override fun write(value: Boolean, buf: ByteBuffer) {
+        buf.put(lower(value))
+    }
+}
+
+/**
+ * @suppress
+ */
 public object FfiConverterString: FfiConverter<String, RustBuffer.ByValue> {
     // Note: we don't inherit from FfiConverterRustBuffer, because we use a
     // special encoding when lowering/lifting.  We can use `RustBuffer.len` to
@@ -1011,8 +1062,160 @@ public object FfiConverterString: FfiConverter<String, RustBuffer.ByValue> {
 
 
 
+data class AnswerFeedback (
+    var `correct`: kotlin.Boolean
+    , 
+    var `expected`: kotlin.String
+    , 
+    var `finished`: kotlin.Boolean
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
 /**
- * One studyable word handed to the UI.
+ * @suppress
+ */
+public object FfiConverterTypeAnswerFeedback: FfiConverterRustBuffer<AnswerFeedback> {
+    override fun read(buf: ByteBuffer): AnswerFeedback {
+        return AnswerFeedback(
+            FfiConverterBoolean.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterBoolean.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: AnswerFeedback) = (
+            FfiConverterBoolean.allocationSize(value.`correct`) +
+            FfiConverterString.allocationSize(value.`expected`) +
+            FfiConverterBoolean.allocationSize(value.`finished`)
+    )
+
+    override fun write(value: AnswerFeedback, buf: ByteBuffer) {
+            FfiConverterBoolean.write(value.`correct`, buf)
+            FfiConverterString.write(value.`expected`, buf)
+            FfiConverterBoolean.write(value.`finished`, buf)
+    }
+}
+
+
+
+/**
+ * One quiz question for the UI.
+ */
+data class Question (
+    var `position`: kotlin.UInt
+    , 
+    var `total`: kotlin.UInt
+    , 
+    var `kind`: QKind
+    , 
+    var `prompt`: kotlin.String
+    , 
+    var `promptAudio`: kotlin.String?
+    , 
+    var `choices`: List<kotlin.String>
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeQuestion: FfiConverterRustBuffer<Question> {
+    override fun read(buf: ByteBuffer): Question {
+        return Question(
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterTypeQKind.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterSequenceString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: Question) = (
+            FfiConverterUInt.allocationSize(value.`position`) +
+            FfiConverterUInt.allocationSize(value.`total`) +
+            FfiConverterTypeQKind.allocationSize(value.`kind`) +
+            FfiConverterString.allocationSize(value.`prompt`) +
+            FfiConverterOptionalString.allocationSize(value.`promptAudio`) +
+            FfiConverterSequenceString.allocationSize(value.`choices`)
+    )
+
+    override fun write(value: Question, buf: ByteBuffer) {
+            FfiConverterUInt.write(value.`position`, buf)
+            FfiConverterUInt.write(value.`total`, buf)
+            FfiConverterTypeQKind.write(value.`kind`, buf)
+            FfiConverterString.write(value.`prompt`, buf)
+            FfiConverterOptionalString.write(value.`promptAudio`, buf)
+            FfiConverterSequenceString.write(value.`choices`, buf)
+    }
+}
+
+
+
+data class SessionProgress (
+    var `total`: kotlin.UInt
+    , 
+    var `answered`: kotlin.UInt
+    , 
+    var `correct`: kotlin.UInt
+    , 
+    var `finished`: kotlin.Boolean
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeSessionProgress: FfiConverterRustBuffer<SessionProgress> {
+    override fun read(buf: ByteBuffer): SessionProgress {
+        return SessionProgress(
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterBoolean.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: SessionProgress) = (
+            FfiConverterUInt.allocationSize(value.`total`) +
+            FfiConverterUInt.allocationSize(value.`answered`) +
+            FfiConverterUInt.allocationSize(value.`correct`) +
+            FfiConverterBoolean.allocationSize(value.`finished`)
+    )
+
+    override fun write(value: SessionProgress, buf: ByteBuffer) {
+            FfiConverterUInt.write(value.`total`, buf)
+            FfiConverterUInt.write(value.`answered`, buf)
+            FfiConverterUInt.write(value.`correct`, buf)
+            FfiConverterBoolean.write(value.`finished`, buf)
+    }
+}
+
+
+
+/**
+ * A word for the browse screen.
  */
 data class WordCard (
     var `term`: kotlin.String
@@ -1079,6 +1282,12 @@ sealed class CoreException: kotlin.Exception() {
             get() = "v1=${ v1 }"
     }
     
+    class NoWords(
+        ) : CoreException() {
+        override val message
+            get() = ""
+    }
+    
 
     
 
@@ -1101,6 +1310,7 @@ public object FfiConverterTypeCoreError : FfiConverterRustBuffer<CoreException> 
             1 -> CoreException.Parse(
                 FfiConverterString.read(buf),
                 )
+            2 -> CoreException.NoWords()
             else -> throw RuntimeException("invalid error enum value, something is very wrong!!")
         }
     }
@@ -1112,6 +1322,10 @@ public object FfiConverterTypeCoreError : FfiConverterRustBuffer<CoreException> 
                 4UL
                 + FfiConverterString.allocationSize(value.v1)
             )
+            is CoreException.NoWords -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
         }
     }
 
@@ -1122,10 +1336,48 @@ public object FfiConverterTypeCoreError : FfiConverterRustBuffer<CoreException> 
                 FfiConverterString.write(value.v1, buf)
                 Unit
             }
+            is CoreException.NoWords -> {
+                buf.putInt(2)
+                Unit
+            }
         }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
     }
 
 }
+
+
+
+
+enum class QKind {
+    
+    MULTIPLE_CHOICE,
+    TYPING;
+
+    
+
+
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeQKind: FfiConverterRustBuffer<QKind> {
+    override fun read(buf: ByteBuffer) = try {
+        QKind.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: QKind) = 4UL
+
+    override fun write(value: QKind, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
 
 
 
@@ -1165,6 +1417,70 @@ public object FfiConverterOptionalString: FfiConverterRustBuffer<kotlin.String?>
 /**
  * @suppress
  */
+public object FfiConverterOptionalTypeQuestion: FfiConverterRustBuffer<Question?> {
+    override fun read(buf: ByteBuffer): Question? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeQuestion.read(buf)
+    }
+
+    override fun allocationSize(value: Question?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeQuestion.allocationSize(value)
+        }
+    }
+
+    override fun write(value: Question?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeQuestion.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalTypeSessionProgress: FfiConverterRustBuffer<SessionProgress?> {
+    override fun read(buf: ByteBuffer): SessionProgress? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeSessionProgress.read(buf)
+    }
+
+    override fun allocationSize(value: SessionProgress?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeSessionProgress.allocationSize(value)
+        }
+    }
+
+    override fun write(value: SessionProgress?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeSessionProgress.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterOptionalTypeWordCard: FfiConverterRustBuffer<WordCard?> {
     override fun read(buf: ByteBuffer): WordCard? {
         if (buf.get().toInt() == 0) {
@@ -1190,12 +1506,47 @@ public object FfiConverterOptionalTypeWordCard: FfiConverterRustBuffer<WordCard?
         }
     }
 }
-        /**
-         * Version banner returned across the uniffi bridge — the Milestone-1 proof.
-         */ fun `coreVersion`(): kotlin.String {
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceString: FfiConverterRustBuffer<List<kotlin.String>> {
+    override fun read(buf: ByteBuffer): List<kotlin.String> {
+        val len = buf.getInt()
+        return List<kotlin.String>(len) {
+            FfiConverterString.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<kotlin.String>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterString.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<kotlin.String>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterString.write(it, buf)
+        }
+    }
+} fun `coreVersion`(): kotlin.String {
             return FfiConverterString.lift(
     uniffiRustCall() { _status ->
     UniffiLib.uniffi_merkrise_core_fn_func_core_version(
+    
+        _status)
+}
+    )
+    }
+    
+ fun `currentQuestion`(): Question? {
+            return FfiConverterOptionalTypeQuestion.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_merkrise_core_fn_func_current_question(
     
         _status)
 }
@@ -1214,10 +1565,6 @@ public object FfiConverterOptionalTypeWordCard: FfiConverterRustBuffer<WordCard?
     }
     
 
-        /**
-         * Parse the bundled seed.json and load every word into memory.
-         * Returns how many words were loaded.
-         */
     @Throws(CoreException::class) fun `loadSeed`(`json`: kotlin.String): kotlin.UInt {
             return FfiConverterUInt.lift(
     uniffiRustCallWithError(CoreException) { _status ->
@@ -1225,6 +1572,42 @@ public object FfiConverterOptionalTypeWordCard: FfiConverterRustBuffer<WordCard?
     
         
         FfiConverterString.lower(`json`),_status)
+}
+    )
+    }
+    
+ fun `sessionProgress`(): SessionProgress? {
+            return FfiConverterOptionalTypeSessionProgress.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_merkrise_core_fn_func_session_progress(
+    
+        _status)
+}
+    )
+    }
+    
+
+        /**
+         * Build a quiz session of up to `size` random words (mixed MC + typing).
+         */
+    @Throws(CoreException::class) fun `startSession`(`size`: kotlin.UInt): kotlin.UInt {
+            return FfiConverterUInt.lift(
+    uniffiRustCallWithError(CoreException) { _status ->
+    UniffiLib.uniffi_merkrise_core_fn_func_start_session(
+    
+        
+        FfiConverterUInt.lower(`size`),_status)
+}
+    )
+    }
+    
+ fun `submitAnswer`(`userInput`: kotlin.String): AnswerFeedback {
+            return FfiConverterTypeAnswerFeedback.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_merkrise_core_fn_func_submit_answer(
+    
+        
+        FfiConverterString.lower(`userInput`),_status)
 }
     )
     }
