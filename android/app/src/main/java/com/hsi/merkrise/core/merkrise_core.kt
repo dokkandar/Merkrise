@@ -680,6 +680,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_merkrise_core_checksum_func_get_card(
     ): Int
+    external fun uniffi_merkrise_core_checksum_func_levels(
+    ): Int
     external fun uniffi_merkrise_core_checksum_func_load_seed(
     ): Int
     external fun uniffi_merkrise_core_checksum_func_session_progress(
@@ -711,11 +713,13 @@ internal object UniffiLib {
     ): RustBuffer.ByValue
     external fun uniffi_merkrise_core_fn_func_get_card(`index`: Int,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    external fun uniffi_merkrise_core_fn_func_levels(uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     external fun uniffi_merkrise_core_fn_func_load_seed(`json`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Int
     external fun uniffi_merkrise_core_fn_func_session_progress(uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
-    external fun uniffi_merkrise_core_fn_func_start_session(`size`: Int,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_merkrise_core_fn_func_start_session(`level`: RustBuffer.ByValue,`size`: Int,uniffi_out_err: UniffiRustCallStatus, 
     ): Int
     external fun uniffi_merkrise_core_fn_func_submit_answer(`userInput`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -849,13 +853,16 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_merkrise_core_checksum_func_get_card() and 0xFFFF) != 22020) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_merkrise_core_checksum_func_levels() and 0xFFFF) != 58462) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_merkrise_core_checksum_func_load_seed() and 0xFFFF) != 24762) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_merkrise_core_checksum_func_session_progress() and 0xFFFF) != 5867) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_merkrise_core_checksum_func_start_session() and 0xFFFF) != 1914) {
+    if ((lib.uniffi_merkrise_core_checksum_func_start_session() and 0xFFFF) != 34006) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_merkrise_core_checksum_func_submit_answer() and 0xFFFF) != 63944) {
@@ -1100,6 +1107,52 @@ public object FfiConverterTypeAnswerFeedback: FfiConverterRustBuffer<AnswerFeedb
             FfiConverterBoolean.write(value.`correct`, buf)
             FfiConverterString.write(value.`expected`, buf)
             FfiConverterBoolean.write(value.`finished`, buf)
+    }
+}
+
+
+
+/**
+ * A chapter/level for the home list.
+ */
+data class LevelInfo (
+    var `index`: kotlin.UInt
+    , 
+    var `title`: kotlin.String
+    , 
+    var `count`: kotlin.UInt
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeLevelInfo: FfiConverterRustBuffer<LevelInfo> {
+    override fun read(buf: ByteBuffer): LevelInfo {
+        return LevelInfo(
+            FfiConverterUInt.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterUInt.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: LevelInfo) = (
+            FfiConverterUInt.allocationSize(value.`index`) +
+            FfiConverterString.allocationSize(value.`title`) +
+            FfiConverterUInt.allocationSize(value.`count`)
+    )
+
+    override fun write(value: LevelInfo, buf: ByteBuffer) {
+            FfiConverterUInt.write(value.`index`, buf)
+            FfiConverterString.write(value.`title`, buf)
+            FfiConverterUInt.write(value.`count`, buf)
     }
 }
 
@@ -1385,6 +1438,38 @@ public object FfiConverterTypeQKind: FfiConverterRustBuffer<QKind> {
 /**
  * @suppress
  */
+public object FfiConverterOptionalUInt: FfiConverterRustBuffer<kotlin.UInt?> {
+    override fun read(buf: ByteBuffer): kotlin.UInt? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterUInt.read(buf)
+    }
+
+    override fun allocationSize(value: kotlin.UInt?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterUInt.allocationSize(value)
+        }
+    }
+
+    override fun write(value: kotlin.UInt?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterUInt.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterOptionalString: FfiConverterRustBuffer<kotlin.String?> {
     override fun read(buf: ByteBuffer): kotlin.String? {
         if (buf.get().toInt() == 0) {
@@ -1533,6 +1618,34 @@ public object FfiConverterSequenceString: FfiConverterRustBuffer<List<kotlin.Str
             FfiConverterString.write(it, buf)
         }
     }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeLevelInfo: FfiConverterRustBuffer<List<LevelInfo>> {
+    override fun read(buf: ByteBuffer): List<LevelInfo> {
+        val len = buf.getInt()
+        return List<LevelInfo>(len) {
+            FfiConverterTypeLevelInfo.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<LevelInfo>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeLevelInfo.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<LevelInfo>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeLevelInfo.write(it, buf)
+        }
+    }
 } fun `coreVersion`(): kotlin.String {
             return FfiConverterString.lift(
     uniffiRustCall() { _status ->
@@ -1564,6 +1677,16 @@ public object FfiConverterSequenceString: FfiConverterRustBuffer<List<kotlin.Str
     )
     }
     
+ fun `levels`(): List<LevelInfo> {
+            return FfiConverterSequenceTypeLevelInfo.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_merkrise_core_fn_func_levels(
+    
+        _status)
+}
+    )
+    }
+    
 
     @Throws(CoreException::class) fun `loadSeed`(`json`: kotlin.String): kotlin.UInt {
             return FfiConverterUInt.lift(
@@ -1589,13 +1712,15 @@ public object FfiConverterSequenceString: FfiConverterRustBuffer<List<kotlin.Str
 
         /**
          * Build a quiz session of up to `size` random words (mixed MC + typing).
+         * `level` None studies the whole course; Some(index) studies just that chapter.
          */
-    @Throws(CoreException::class) fun `startSession`(`size`: kotlin.UInt): kotlin.UInt {
+    @Throws(CoreException::class) fun `startSession`(`level`: kotlin.UInt?, `size`: kotlin.UInt): kotlin.UInt {
             return FfiConverterUInt.lift(
     uniffiRustCallWithError(CoreException) { _status ->
     UniffiLib.uniffi_merkrise_core_fn_func_start_session(
     
         
+        FfiConverterOptionalUInt.lower(`level`),
         FfiConverterUInt.lower(`size`),_status)
 }
     )

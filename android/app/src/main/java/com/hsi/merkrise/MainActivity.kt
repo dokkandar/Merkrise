@@ -18,6 +18,7 @@ import com.hsi.merkrise.core.AnswerFeedback
 import com.hsi.merkrise.core.QKind
 import com.hsi.merkrise.core.Question
 import com.hsi.merkrise.core.currentQuestion
+import com.hsi.merkrise.core.levels
 import com.hsi.merkrise.core.loadSeed
 import com.hsi.merkrise.core.sessionProgress
 import com.hsi.merkrise.core.startSession
@@ -34,6 +35,7 @@ class MainActivity : Activity() {
     private var player: MediaPlayer? = null
     private var total = 0
     private val sessionSize = 20u
+    private var currentLevel: UInt? = null // null = whole course
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -84,17 +86,30 @@ class MainActivity : Activity() {
     // ---- screens ----
     private fun showHome() {
         clear()
-        root.gravity = Gravity.CENTER
-        root.addView(label("Merkrise", 40f, true))
-        root.addView(gap(12))
-        root.addView(label("A2 German · $total words", 16f))
-        root.addView(gap(48))
-        root.addView(wideButton("Start studying ($sessionSize words)") {
+        root.gravity = Gravity.TOP
+        root.addView(label("Merkrise", 34f, true))
+        root.addView(label("A2 German · $total words", 15f))
+        root.addView(gap(22))
+        root.addView(wideButton("Study all — random $sessionSize") {
             if (total == 0) return@wideButton
-            startSession(sessionSize)
-            showQuestion()
+            beginSession(null)
         })
+        root.addView(gap(22))
+        root.addView(label("Chapters", 16f, true))
+        root.addView(gap(10))
+        for (lv in levels()) {
+            root.addView(wideButton("${lv.index}.  ${lv.title}   (${lv.count})") {
+                beginSession(lv.index)
+            })
+            root.addView(gap(8))
+        }
         afterRender()
+    }
+
+    private fun beginSession(level: UInt?) {
+        currentLevel = level
+        startSession(level, sessionSize)
+        showQuestion()
     }
 
     private fun showQuestion() {
@@ -186,7 +201,7 @@ class MainActivity : Activity() {
         root.addView(label("You scored", 16f))
         root.addView(label("${p?.correct ?: 0u} / ${p?.total ?: 0u}", 44f, true))
         root.addView(gap(40))
-        root.addView(wideButton("Study again") { startSession(sessionSize); showQuestion() })
+        root.addView(wideButton("Study again") { beginSession(currentLevel) })
         root.addView(gap(10))
         root.addView(wideButton("Home") { showHome() })
         afterRender()

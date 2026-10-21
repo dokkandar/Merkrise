@@ -58,6 +58,14 @@ pub struct SessionProgress {
     pub finished: bool,
 }
 
+/// A chapter/level for the home list.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct LevelInfo {
+    pub index: u32,
+    pub title: String,
+    pub count: u32,
+}
+
 // --- internal model ---
 #[derive(Clone)]
 struct Word {
@@ -81,6 +89,12 @@ struct Session {
     correct: u32,
 }
 
+struct LevelMeta {
+    index: u32,
+    title: String,
+    members: Vec<usize>, // indices into WORDS
+}
+
 // --- seed.json shape (only the fields we read) ---
 #[derive(Deserialize)]
 struct SeedFile {
@@ -89,6 +103,8 @@ struct SeedFile {
 #[derive(Deserialize)]
 struct SeedLevel {
     index: u32,
+    #[serde(default)]
+    title: Option<String>,
     #[serde(default)]
     items: Vec<SeedItem>,
 }
@@ -104,7 +120,9 @@ struct SeedItem {
     typing_alternatives: Vec<String>,
 }
 
+// Lock order where several are held: WORDS -> LEVELS -> SESSION.
 static WORDS: Mutex<Vec<Word>> = Mutex::new(Vec::new());
+static LEVELS: Mutex<Vec<LevelMeta>> = Mutex::new(Vec::new());
 static SESSION: Mutex<Option<Session>> = Mutex::new(None);
 
 /// Case/space-insensitive, umlaut-folding normalization for answer checking.
@@ -153,10 +171,17 @@ pub fn load_seed(json: String) -> Result<u32, CoreError> {
     let parsed: SeedFile =
         serde_json::from_str(&json).map_err(|e| CoreError::Parse(e.to_string()))?;
     let mut words = WORDS.lock().unwrap();
+    let mut levels = LEVELS.lock().unwrap();
     words.clear();
+    levels.clear();
     for level in parsed.levels {
+        let title = level
+            .title
+            .unwrap_or_else(|| format!("Level {}", level.index));
+        let mut members = Vec::new();
         for item in level.items {
             let accepted = build_accepted(&item.term, &item.typing_alternatives);
+            members.push(words.len());
             words.push(Word {
                 term: item.term,
                 meaning: item.meaning,
@@ -166,8 +191,27 @@ pub fn load_seed(json: String) -> Result<u32, CoreError> {
                 accepted,
             });
         }
+        levels.push(LevelMeta {
+            index: level.index,
+            title,
+            members,
+        });
     }
     Ok(words.len() as u32)
+}
+
+#[uniffi::export]
+pub fn levels() -> Vec<LevelInfo> {
+    LEVELS
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|l| LevelInfo {
+            index: l.index,
+            title: l.title.clone(),
+            count: l.members.len() as u32,
+        })
+        .collect()
 }
 
 #[uniffi::export]
@@ -187,18 +231,32 @@ pub fn get_card(index: u32) -> Option<WordCard> {
 }
 
 /// Build a quiz session of up to `size` random words (mixed MC + typing).
+/// `level` None studies the whole course; Some(index) studies just that chapter.
 #[uniffi::export]
-pub fn start_session(size: u32) -> Result<u32, CoreError> {
+pub fn start_session(level: Option<u32>, size: u32) -> Result<u32, CoreError> {
     let words = WORDS.lock().unwrap();
     if words.is_empty() {
         return Err(CoreError::NoWords);
     }
-    let max = words.len();
-    let n = (size as usize).min(max);
-    let mut idx: Vec<usize> = (0..max).collect();
+    let candidates: Vec<usize> = match level {
+        Some(ix) => {
+            let levels = LEVELS.lock().unwrap();
+            levels
+                .iter()
+                .find(|l| l.index == ix)
+                .map(|l| l.members.clone())
+                .unwrap_or_default()
+        }
+        None => (0..words.len()).collect(),
+    };
+    if candidates.is_empty() {
+        return Err(CoreError::NoWords);
+    }
+    let n = (size as usize).min(candidates.len());
+    let mut idx = candidates;
     fastrand::shuffle(&mut idx);
     idx.truncate(n);
-    let can_mc = max >= 4;
+    let can_mc = words.len() >= 4; // distractors drawn from the whole course
     let questions: Vec<Q> = idx
         .into_iter()
         .map(|i| {
@@ -337,10 +395,20 @@ mod tests {
     }
 
     #[test]
+    fn levels_lists_chapters_with_counts() {
+        let _g = TEST_LOCK.lock().unwrap();
+        load_seed(SAMPLE.to_string()).unwrap();
+        let ls = levels();
+        assert_eq!(ls.len(), 1);
+        assert_eq!(ls[0].index, 1);
+        assert_eq!(ls[0].count, 5);
+    }
+
+    #[test]
     fn full_session_scores_all_correct() {
         let _g = TEST_LOCK.lock().unwrap();
         load_seed(SAMPLE.to_string()).unwrap();
-        let n = start_session(5).unwrap();
+        let n = start_session(None, 5).unwrap();
         assert_eq!(n, 5);
         let mut answered = 0;
         while let Some(q) = current_question() {
