@@ -3,8 +3,11 @@ package com.hsi.merkrise
 import android.app.Activity
 import android.Manifest
 import android.app.AlertDialog
+import android.app.Dialog
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
 import android.os.Build
 import android.os.SystemClock
 import android.provider.Settings
@@ -19,10 +22,17 @@ import android.text.Spanned
 import android.text.style.ForegroundColorSpan
 import android.text.style.StyleSpan
 import android.text.style.UnderlineSpan
+import android.media.AudioAttributes
 import android.media.MediaPlayer
+import android.media.SoundPool
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.text.InputType
 import android.view.Gravity
 import android.view.View
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -35,6 +45,7 @@ import com.hsi.merkrise.core.AnswerFeedback
 import com.hsi.merkrise.core.LevelInfo
 import com.hsi.merkrise.core.QKind
 import com.hsi.merkrise.core.Question
+import com.hsi.merkrise.core.SessionProgress
 import com.hsi.merkrise.core.Stage
 import com.hsi.merkrise.core.WordRow
 import com.hsi.merkrise.core.currentQuestion
@@ -53,6 +64,7 @@ import com.hsi.merkrise.core.sessionProgress
 import com.hsi.merkrise.core.setPace
 import com.hsi.merkrise.core.setStarred
 import com.hsi.merkrise.core.startFastSession
+import com.hsi.merkrise.core.startLearnNew
 import com.hsi.merkrise.core.startSession
 import com.hsi.merkrise.core.stats
 import com.hsi.merkrise.core.submitAnswer
@@ -73,17 +85,27 @@ class MainActivity : Activity() {
     private lateinit var bottomBar: LinearLayout
     private lateinit var prefs: SharedPreferences
     private var player: MediaPlayer? = null
+    private var sfx: SoundPool? = null
+    private var correctSfx = 0
+    private var wrongSfx = 0
+    private val ui = Handler(Looper.getMainLooper())
+    private var pendingWordAudio: Runnable? = null
     private var currentLevel: UInt? = null // null = whole course
     private var currentTitle = COURSE
     private var back: (() -> Unit)? = null // what the system Back button does on this screen
     private var chromeOn = true            // header + bottom bar shown
     private var imeBottom = 0
     private var inSession = false   // a card or its feedback is on screen
+    private var typingActive = false // the native keyboard is wanted on this screen
     private var openTopic: String? = null // expanded topic on the Chapters screen
 
     // Fast review: timed multiple-choice cards. The deadline is checked against elapsedRealtime on every
     // frame (not with a ValueAnimator, which jumps to its end when the system animation scale is 0).
     private var fastMode = false
+    private var learnNew = false         // "Learn new": unseen words only, intro then three tasks
+    private val learnScored = mutableMapOf<UInt, Int>()  // Learn new: scored tasks per word
+    private val learnDone = mutableSetOf<UInt>()          // Learn new: words whose 3 tasks are done
+    private var learnWordTotal = 0                        // Learn new: words in this session
     private var cardDone = false         // this card was answered or timed out: ignore further taps
     private var timed: Question? = null  // the timed card on screen, null otherwise
     private var timerTotalMs = 0L
@@ -103,6 +125,17 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         prefs = getSharedPreferences("merkrise", MODE_PRIVATE)
+        sfx = SoundPool.Builder()
+            .setMaxStreams(2)
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_GAME)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build()
+            )
+            .build()
+        correctSfx = sfx!!.load(this, R.raw.correct, 1)
+        wrongSfx = sfx!!.load(this, R.raw.wrong, 1)
 
         header = LinearLayout(this).apply {
             gravity = Gravity.CENTER_VERTICAL
@@ -236,6 +269,10 @@ class MainActivity : Activity() {
 
     // ---- screen scaffolding ----
     private fun screen(gravity: Int = Gravity.TOP, chrome: Boolean = true, onBack: (() -> Unit)?) {
+        cancelPendingAudio()
+        typingActive = false
+        (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager)
+            .hideSoftInputFromWindow(body.windowToken, 0)
         back = onBack
         chromeOn = chrome
         inSession = false
@@ -248,7 +285,7 @@ class MainActivity : Activity() {
     }
 
     private fun afterRender() {
-        body.requestFocus()                    // keep focus off text fields
+        if (!typingActive) body.requestFocus() // keep focus off text fields
         scroll.post { scroll.scrollTo(0, 0) }  // always show the prompt at top
     }
 
@@ -279,6 +316,56 @@ class MainActivity : Activity() {
         setPadding(dp(size / 4), dp(size / 4), dp(size / 4), dp(size / 4))
         layoutParams = lp(dp(size), dp(size)).apply { gravity = Gravity.CENTER_HORIZONTAL }
         setOnClickListener { playAudio(file) }
+    }
+
+    /** Egg photos are the progress indicator: image 1 at the start, 7 only at the 80 % finish line. */
+    private fun egg(index: Int, size: Int = 56) = ImageView(this).apply {
+        setImageResource(EGGS[index - 1])
+        scaleType = ImageView.ScaleType.FIT_CENTER
+        contentDescription = "Progress $index of 7"
+        layoutParams = lp(dp(size), dp(size))
+    }
+
+    /** Correct answers move the egg; a miss leaves it where it was. Image 7 needs a finished unit and >= 80 %. */
+    private fun eggIndex(correct: Int, total: Int, complete: Boolean): Int {
+        if (total <= 0) return 1
+        if (complete && correct * 5 >= total * 4) return 7
+        val index = 1 + (6f * correct / total).roundToInt()
+        return index.coerceIn(1, if (complete) 7 else 6)
+    }
+
+    private fun eggFor(q: Question, progress: SessionProgress?): View {
+        // The ring is the session progress bar: it advances on every card, right or wrong.
+        val cards = (progress?.total ?: 0u).toInt()
+        val answered = (progress?.answered ?: 0u).toInt()
+        val fraction = if (cards > 0) (answered.toFloat() / cards).coerceIn(0f, 1f) else 0f
+        if (q.taskTotal > 0u) {
+            // The egg shows the share of the session's words completed.
+            val total = learnWordTotal.coerceAtLeast(1)
+            val done = learnDone.size.coerceIn(0, total)
+            val index = (1 + (6f * done / total).roundToInt()).coerceIn(1, 7)
+            return eggBadge(index, fraction)
+        }
+        val total = (progress?.scored ?: 0u).toInt()
+        val correct = (progress?.correct ?: 0u).toInt()
+        val complete = progress?.finished == true
+        val index = eggIndex(correct, total, complete)
+        return eggBadge(index, fraction)
+    }
+
+    private fun eggBadge(index: Int, fraction: Float): View {
+        val frame = FrameLayout(this).apply {
+            layoutParams = lp(dp(152), dp(152))
+            contentDescription = "Progress"
+        }
+        frame.addView(ProgressRing(this).apply {
+            layoutParams = FrameLayout.LayoutParams(MATCH, MATCH)
+            setProgress(fraction)
+        })
+        frame.addView(egg(index, size = 112).apply {
+            layoutParams = FrameLayout.LayoutParams(dp(112), dp(112), Gravity.CENTER)
+        })
+        return frame
     }
 
     private fun inputField(hint: String, value: String = "") = EditText(this).apply {
@@ -515,6 +602,7 @@ class MainActivity : Activity() {
         body.addView(gap(16))
         body.addView(segmentedBar(known, learning, words.size))
         body.addView(pill("Study this chapter") { beginSession(lv.index, lv.title) })
+        body.addView(pill("Learn new", SURFACE, TEXT) { beginLearnNew(lv.index, lv.title) })
         body.addView(pill("⚡  Fast review", SURFACE, TEXT) { beginFast(lv.index, lv.title) })
         body.addView(gap(16))
 
@@ -671,6 +759,24 @@ class MainActivity : Activity() {
     }
 
     // ---- study session ----
+    /** Learn new: only unseen words, each shown with its translation and audio before a four-choice card. */
+    private fun beginLearnNew(level: UInt?, title: String) {
+        currentLevel = level
+        currentTitle = title
+        fastMode = false
+        learnNew = true
+        learnScored.clear()
+        learnDone.clear()
+        try {
+            learnWordTotal = startLearnNew(level, 5u, now()).toInt() // 5 words x 3 tasks
+        } catch (e: Exception) {
+            learnNew = false
+            toast("No new words here")
+            return
+        }
+        showQuestion()
+    }
+
     /** Fast review: 12 timed multiple-choice cards, easy to hard. The core builds the cards and the time limits. */
     private fun beginFast(level: UInt?, title: String) {
         try {
@@ -682,6 +788,10 @@ class MainActivity : Activity() {
         currentLevel = level
         currentTitle = title
         fastMode = true
+        learnNew = false
+        learnScored.clear()
+        learnDone.clear()
+        learnWordTotal = 0
         showQuestion()
     }
 
@@ -689,6 +799,10 @@ class MainActivity : Activity() {
         currentLevel = level
         currentTitle = title
         fastMode = false
+        learnNew = false
+        learnScored.clear()
+        learnDone.clear()
+        learnWordTotal = 0
         try {
             startSession(level, sessionSize.toUInt(), now())
         } catch (e: Exception) {
@@ -706,8 +820,14 @@ class MainActivity : Activity() {
         QKind.MC, QKind.AUDIO_MC -> "Pick the correct answer"
         QKind.REVERSED -> "Choose the correct translation"
         QKind.TYPING -> "Write the German"
+        QKind.MEANING_TYPING -> "Type the English"
         QKind.HEARING -> "Write the hearing"
         QKind.ARRANGE -> "Arrange the sentence"
+        QKind.CLOZE -> "Fill the gap"
+        QKind.CLOZE_MEANING -> "What does the missing word mean?"
+        QKind.CLOZE_TYPING -> "Type the missing word"
+        QKind.YES_NO -> "Does the word mean that?"
+        QKind.SENTENCE_CHOICE -> "What does it mean?"
     }
 
     private fun statusStrip(q: Question) = LinearLayout(this).apply {
@@ -719,9 +839,12 @@ class MainActivity : Activity() {
         })
         addView(text("×${q.reps}", 12f, MUTED).apply { setPadding(dp(8), 0, 0, 0) })
         addView(View(context), lp(0, 1, 1f))
-        addView(chip("already learnt") {
-            markKnown(q.word); save(); toast("Marked as learnt"); showQuestion()
-        })
+        if (!(learnNew && q.kind == QKind.PRESENTATION)) {
+            addView(chip("already learnt") {
+                if (learnNew) learnDone.add(q.word)
+                markKnown(q.word); save(); toast("Marked as learnt"); showQuestion()
+            })
+        }
         if (q.kind != QKind.PRESENTATION) {
             addView(roundButton("👌") { rateEasy(q.word); save(); toast("Marked easy") })
             var starred = q.starred
@@ -739,15 +862,26 @@ class MainActivity : Activity() {
         screen { leaveSession() }
         inSession = true
         cardDone = false
-        val score = sessionProgress()?.correct ?: 0u
+        val progress = sessionProgress()
+        val score = progress?.correct ?: 0u
         val timedCard = q.timeLimitMs > 0u
         val heading = when {
+            learnNew -> "Learn new · $currentTitle"
             fastMode -> "Fast review · $currentTitle"
             timedCard -> "⚡ Speed round · $currentTitle" // the timed cards at the end of a normal session
             else -> currentTitle
         }
-        body.addView(text(heading, 15f, TEXT, MEDIUM))
-        body.addView(text("Card ${q.position} / ${q.total}  ·  Score $score", 13f, MUTED))
+        val line = when {
+            q.taskTotal > 0u && q.taskPosition > 0u -> "Task ${q.taskPosition} / ${q.taskTotal}  ·  Score $score"
+            q.taskTotal > 0u -> "New word  ·  Score $score"
+            else -> "Card ${q.position} / ${q.total}  ·  Score $score"
+        }
+        body.addView(eggFor(q, progress).apply {
+            (layoutParams as LinearLayout.LayoutParams).gravity = Gravity.CENTER_HORIZONTAL
+        })
+        body.addView(gap(8))
+        body.addView(text(heading, 15f, TEXT, MEDIUM, Gravity.CENTER))
+        body.addView(text(line, 13f, MUTED, REGULAR, Gravity.CENTER))
         body.addView(gap(10))
         body.addView(segmentedBar(q.position.toInt() - 1, 0, q.total.toInt()))
         // a timed card has no 'already learnt' / easy / hard buttons: a stray tap would cost the player time
@@ -765,9 +899,14 @@ class MainActivity : Activity() {
             QKind.PRESENTATION -> presentation(q)
             QKind.MC, QKind.REVERSED -> { promptBlock(q); choices(q) }
             QKind.AUDIO_MC -> { q.promptAudio?.let { body.addView(speaker(it, 120)) }; body.addView(gap(24)); choices(q) }
+            QKind.CLOZE, QKind.CLOZE_MEANING -> { promptBlock(q); choices(q) }
             QKind.TYPING -> { promptBlock(q); typing(q) }
+            QKind.MEANING_TYPING -> { promptBlock(q); typing(q) }
             QKind.HEARING -> { q.promptAudio?.let { body.addView(speaker(it, 120)) }; body.addView(gap(24)); typing(q) }
             QKind.ARRANGE -> { promptBlock(q); arrange(q) }
+            QKind.CLOZE_TYPING -> { promptBlock(q); typing(q) }
+            QKind.YES_NO -> { promptBlock(q); choices(q) }
+            QKind.SENTENCE_CHOICE -> { promptBlock(q); choices(q) }
         }
         afterRender()
         q.promptAudio?.let { if (autoplay) playAudio(it) }
@@ -835,7 +974,8 @@ class MainActivity : Activity() {
     }
 
     private fun promptBlock(q: Question) {
-        body.addView(text(q.prompt, 30f, TEXT, MEDIUM))
+        val cloze = q.kind == QKind.CLOZE || q.kind == QKind.CLOZE_MEANING || q.kind == QKind.CLOZE_TYPING || q.kind == QKind.YES_NO || q.kind == QKind.SENTENCE_CHOICE
+        body.addView(text(q.prompt, if (cloze) 23f else 30f, TEXT, MEDIUM))
         q.promptAudio?.let { body.addView(gap(14)); body.addView(speaker(it)) }
         body.addView(gap(24))
     }
@@ -853,6 +993,10 @@ class MainActivity : Activity() {
             val fb = submitAnswer("")
             save()
             if (fb.finished) showEnd() else showQuestion()
+        })
+        if (learnNew) body.addView(pill("Already known", SURFACE, TEXT) {
+            learnDone.add(q.word)
+            markKnown(q.word); save(); toast("Marked as known"); showQuestion()
         })
     }
 
@@ -877,22 +1021,73 @@ class MainActivity : Activity() {
     }
 
     private fun typing(q: Question) {
-        val typed = StringBuilder()
-        val field = text("", 22f, INK, MEDIUM).apply {
-            hint = "type your answer"
-            setHintTextColor(0x99352542.toInt())
-            background = rounded(KEY, 28)
-            minHeight = dp(56)
-            setPadding(dp(20), dp(12), dp(20), dp(12))
+        typingActive = true
+        val field = inputField("type your answer").apply {
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+            imeOptions = EditorInfo.IME_ACTION_DONE
+            setOnEditorActionListener { _, actionId, _ ->
+                if (actionId == EditorInfo.IME_ACTION_DONE) {
+                    hideKeyboard(this)
+                    answer(q, text.toString())
+                    true
+                } else {
+                    false
+                }
+            }
         }
+        body.addView(specialKeys(field))
+        body.addView(gap(10))
         body.addView(field)
         body.addView(gap(14))
-        body.addView(GermanKeyboard(
-            this,
-            onKey = { typed.append(it); field.text = typed },
-            onBackspace = { if (typed.isNotEmpty()) typed.setLength(typed.length - 1); field.text = typed },
-        ))
-        body.addView(pill("Continue") { answer(q, typed.toString()) })
+        body.addView(pill("Continue") {
+            hideKeyboard(field)
+            answer(q, field.text.toString())
+        })
+        field.requestFocus()
+        field.post {
+            val imm = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
+            imm.showSoftInput(field, InputMethodManager.SHOW_IMPLICIT)
+            // The native keyboard covers the lower half; scroll the field up so the special
+            // characters and Continue stay above the keyboard.
+            field.postDelayed({
+                if (typingActive) {
+                    scroll.smoothScrollTo(0, (field.top - dp(16)).coerceAtLeast(0))
+                }
+            }, 500)
+        }
+    }
+
+    private fun specialKeys(field: EditText): View {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+        }
+        listOf("ä", "ö", "ü", "ß").forEach { ch ->
+            row.addView(text(ch, 20f, INK, MEDIUM).apply {
+                gravity = Gravity.CENTER
+                background = rounded(KEY, 10)
+                layoutParams = lp(0, dp(48), 1f).apply {
+                    setMargins(dp(4), 0, dp(4), 0)
+                }
+                setOnClickListener {
+                    insertAtCursor(field, ch)
+                    field.requestFocus()
+                }
+            })
+        }
+        return row
+    }
+
+    private fun insertAtCursor(field: EditText, s: String) {
+        val start = minOf(field.selectionStart, field.selectionEnd).coerceAtLeast(0)
+        val end = maxOf(field.selectionStart, field.selectionEnd).coerceAtLeast(0)
+        field.text.replace(start, end, s)
+        field.setSelection(start + s.length)
+    }
+
+    private fun hideKeyboard(v: View) {
+        val imm = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
+        imm.hideSoftInputFromWindow(v.windowToken, 0)
     }
 
     private fun arrange(q: Question) {
@@ -903,16 +1098,24 @@ class MainActivity : Activity() {
             minimumHeight = dp(84)
         }
         val bank = FlowLayout(this, dp(8)).apply { setPadding(0, dp(16), 0, dp(8)) }
-        fun tile(i: Int, onTap: () -> Unit) = text(q.tiles[i], 18f, INK, MEDIUM).apply {
+        fun tile(i: Int) = text(q.tiles[i], 18f, INK, MEDIUM).apply {
             background = rounded(KEY, 14)
             setPadding(dp(14), dp(10), dp(14), dp(10))
-            setOnClickListener { onTap() }
         }
+        // The bank keeps every tile in its original slot: a picked word leaves an empty hole
+        // (INVISIBLE still occupies its space) so the remaining words never jump around.
+        val bankTiles = q.tiles.indices.map { i -> tile(i).also { bank.addView(it) } }
         fun render() {
             answerBox.removeAllViews()
-            bank.removeAllViews()
-            chosen.forEach { i -> answerBox.addView(tile(i) { chosen.remove(i); render() }) }
-            q.tiles.indices.filter { it !in chosen }.forEach { i -> bank.addView(tile(i) { chosen.add(i); render() }) }
+            chosen.forEach { i ->
+                answerBox.addView(tile(i).apply { setOnClickListener { chosen.remove(i); render() } })
+            }
+            bankTiles.forEachIndexed { i, v ->
+                v.visibility = if (i in chosen) View.INVISIBLE else View.VISIBLE
+            }
+        }
+        bankTiles.forEachIndexed { i, v ->
+            v.setOnClickListener { if (i !in chosen) { chosen.add(i); render() } }
         }
         render()
         val wand = icon(R.drawable.ic_wand, INK, 40).apply {
@@ -956,6 +1159,16 @@ class MainActivity : Activity() {
         screen(Gravity.CENTER) { leaveSession() }
         inSession = true
         val ok = fb.correct
+        playSfx(ok)
+        if (q.taskTotal > 0u && fb.scored) {
+            val done = (learnScored[q.word] ?: 0) + 1
+            learnScored[q.word] = done
+            if (done >= q.taskTotal.toInt()) learnDone.add(q.word)
+        }
+        body.addView(eggFor(q, sessionProgress()).apply {
+            (layoutParams as LinearLayout.LayoutParams).gravity = Gravity.CENTER_HORIZONTAL
+        })
+        body.addView(gap(16))
         val label = when {
             fb.hinted -> "revealed with the wand"
             timedOut -> "time's up"
@@ -969,7 +1182,7 @@ class MainActivity : Activity() {
             // show WHAT was wrong: the wrong words (typed kinds) or the wrong choice
             when {
                 timedOut -> body.addView(outlined("correct answer", fb.expected, LIGHT_GREEN)) // nothing was picked
-                q.kind == QKind.TYPING || q.kind == QKind.HEARING || q.kind == QKind.ARRANGE ->
+                q.kind == QKind.TYPING || q.kind == QKind.MEANING_TYPING || q.kind == QKind.HEARING || q.kind == QKind.ARRANGE || q.kind == QKind.CLOZE_TYPING ->
                     typedMistake(fb.expected, input)
                 else -> choiceMistake(fb.expected, input)
             }
@@ -999,8 +1212,36 @@ class MainActivity : Activity() {
             if (fb.finished) showEnd() else showQuestion()
         })
         afterRender()
-        // a wrong or typed answer is the moment to hear the German word
-        if (autoplay && audio != null && q.promptAudio == null) playAudio(audio)
+        // Let the correct/wrong sound finish before the German word.
+        val wordAudio = audio
+        if (autoplay && wordAudio != null && q.promptAudio == null) {
+            val run = Runnable {
+                pendingWordAudio = null
+                playAudio(wordAudio)
+            }
+            pendingWordAudio = run
+            ui.postDelayed(run, if (ok) 1350L else 600L)
+        }
+        if (!ok) encourage()
+    }
+
+    /** A wrong answer gets a friendly nudge in the app's own colours. */
+    private fun encourage() {
+        val dialog = Dialog(this)
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = rounded(SURFACE, 24)
+            setPadding(dp(24), dp(24), dp(24), dp(24))
+            addView(text("Nice try!", 22f, YELLOW, MEDIUM, Gravity.START))
+            addView(gap(10))
+            addView(text("Mistakes are just part of the learning process.", 15f, MUTED, REGULAR, Gravity.START))
+            addView(gap(20))
+            addView(pill("Continue") { dialog.dismiss() })
+        }
+        dialog.setContentView(content)
+        dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+        dialog.show()
+        dialog.window?.setLayout((resources.displayMetrics.widthPixels * 0.85f).toInt(), WRAP)
     }
 
     /** Whitespace split that matches the core's split_whitespace (Unicode spaces included). */
@@ -1080,6 +1321,7 @@ class MainActivity : Activity() {
         body.addView(text("🔥 ${st.streakDays} day streak  ·  ${st.dueToday} due today", 14f, MUTED))
         body.addView(gap(28))
         if (fastMode) body.addView(pill("⚡  Fast review again") { beginFast(currentLevel, currentTitle) })
+        if (learnNew) body.addView(pill("Learn more new words") { beginLearnNew(currentLevel, currentTitle) })
         body.addView(pill(if (fastMode) "Study normally" else "Study again") { beginSession(currentLevel, currentTitle) })
         body.addView(pill("Home", SURFACE, TEXT) { showHome() })
         afterRender()
@@ -1130,6 +1372,17 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun playSfx(correct: Boolean) {
+        val id = if (correct) correctSfx else wrongSfx
+        // 0.05 is about 5 dB below the previous 0.09 playback volume.
+        if (id != 0) sfx?.play(id, 0.05f, 0.05f, 1, 0, 1f)
+    }
+
+    private fun cancelPendingAudio() {
+        pendingWordAudio?.let { ui.removeCallbacks(it) }
+        pendingWordAudio = null
+    }
+
     private fun playAudio(file: String) {
         try {
             player?.release()
@@ -1152,8 +1405,11 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        cancelPendingAudio()
         player?.release()
         player = null
+        sfx?.release()
+        sfx = null
         super.onDestroy()
     }
 

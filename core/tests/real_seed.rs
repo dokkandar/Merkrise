@@ -13,9 +13,12 @@ fn read(path: &str) -> String {
 
 /// The input that answers `q` correctly, found through the public API.
 fn right(q: &Question) -> String {
+    if let Some(a) = &q.answer {
+        return a.clone();
+    }
     let w = get_card(q.word).unwrap();
     match q.kind {
-        QKind::Reversed => w.meaning,
+        QKind::Reversed | QKind::MeaningTyping => w.meaning,
         QKind::Arrange => w.term, // the UI joins the tiles with spaces
         _ => w.term,
     }
@@ -59,6 +62,70 @@ fn saved_progress_survives_the_rechunk() {
     assert_eq!(import_state(saved).unwrap(), keys, "saved keys lost in the re-chunk");
     let after = stats(NOW);
     assert_eq!((before.known, before.learning, before.new_words), (after.known, after.learning, after.new_words));
+}
+
+#[test]
+fn learn_new_real_lesson_has_the_fixed_task_mix() {
+    let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    load_seed(read("android/app/src/main/assets/seed.json")).unwrap();
+    let l01 = levels().into_iter().find(|l| l.title.starts_with("Lesson 01")).unwrap().index;
+    assert_eq!(start_learn_new(Some(l01), 5, NOW).unwrap(), 5);
+    let mut by_word: BTreeMap<u32, Vec<QKind>> = BTreeMap::new();
+    let mut intros = 0;
+    while let Some(q) = current_question() {
+        if q.kind == QKind::Presentation {
+            intros += 1;
+            assert_eq!(q.task_position, 0);
+            assert_eq!(q.task_total, 3);
+        } else {
+            by_word.entry(q.word).or_default().push(q.kind);
+            assert!((1..=q.task_total).contains(&q.task_position));
+            assert_eq!(q.task_total, 3);
+        }
+        if submit_answer(if q.kind == QKind::Presentation { String::new() } else { right(&q) }).finished {
+            break;
+        }
+    }
+    assert_eq!(intros, 5);
+    assert_eq!(by_word.len(), 5);
+    for kinds in by_word.values() {
+        assert_eq!(kinds.len(), 3, "{kinds:?}");
+        assert_eq!(kinds[0], QKind::Typing);
+        assert_eq!(kinds[1], QKind::Mc);
+        assert_eq!(kinds[2], QKind::Arrange);
+    }
+}
+
+#[test]
+fn real_politik_gets_a_sentence_with_the_word() {
+    let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    load_seed(read("android/app/src/main/assets/seed.json")).unwrap();
+    let level = levels()
+        .into_iter()
+        .map(|l| l.index)
+        .find(|&ix| level_words(ix).iter().any(|w| w.term == "die Politik"))
+        .expect("die Politik");
+    let words = level_words(level);
+    let target = words.iter().find(|w| w.term == "die Politik").unwrap().index;
+    for w in &words {
+        if w.index != target {
+            mark_known(w.index);
+        }
+    }
+    assert_eq!(start_learn_new(Some(level), 5, NOW).unwrap(), 1);
+    let mut sentences = Vec::new();
+    while let Some(q) = current_question() {
+        if q.kind == QKind::Arrange {
+            let sentence = q.answer.clone().expect("sentence to make");
+            assert!(sentence.contains("Politik"), "not a sentence with the word: {sentence}");
+            assert!(!q.tiles.is_empty());
+            sentences.push(sentence);
+        }
+        if submit_answer(if q.kind == QKind::Presentation { String::new() } else { right(&q) }).finished {
+            break;
+        }
+    }
+    assert_eq!(sentences.len(), 1, "one sentence-making task expected: {sentences:?}");
 }
 
 #[test]

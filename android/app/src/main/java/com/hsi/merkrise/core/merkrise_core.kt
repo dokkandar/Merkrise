@@ -710,6 +710,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_merkrise_core_checksum_func_start_fast_session(
     ): Int
+    external fun uniffi_merkrise_core_checksum_func_start_learn_new(
+    ): Int
     external fun uniffi_merkrise_core_checksum_func_start_session(
     ): Int
     external fun uniffi_merkrise_core_checksum_func_stats(
@@ -770,6 +772,8 @@ internal object UniffiLib {
     external fun uniffi_merkrise_core_fn_func_set_starred(`word`: Int,`starred`: Byte,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     external fun uniffi_merkrise_core_fn_func_start_fast_session(`level`: RustBuffer.ByValue,`size`: Int,`now`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): Int
+    external fun uniffi_merkrise_core_fn_func_start_learn_new(`level`: RustBuffer.ByValue,`size`: Int,`now`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Int
     external fun uniffi_merkrise_core_fn_func_start_session(`level`: RustBuffer.ByValue,`size`: Int,`now`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Int
@@ -952,6 +956,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_merkrise_core_checksum_func_start_fast_session() and 0xFFFF) != 38876) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_merkrise_core_checksum_func_start_learn_new() and 0xFFFF) != 30057) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_merkrise_core_checksum_func_start_session() and 0xFFFF) != 51701) {
@@ -1430,6 +1437,21 @@ data class Question (
      * Fast review: the time to answer in ms (the UI submits "" when it runs out); 0 = untimed.
      */
     var `timeLimitMs`: kotlin.UInt
+    , 
+    /**
+     * Learn new: 1-based task within this word's set; 0 on its introduction card and elsewhere.
+     */
+    var `taskPosition`: kotlin.UInt
+    , 
+    /**
+     * Learn new: tasks in this word's set (5-6); 0 in regular sessions.
+     */
+    var `taskTotal`: kotlin.UInt
+    , 
+    /**
+     * Context cloze answer (the word that was blanked); None on other cards.
+     */
+    var `answer`: kotlin.String?
     
 ){
     
@@ -1462,6 +1484,9 @@ public object FfiConverterTypeQuestion: FfiConverterRustBuffer<Question> {
             FfiConverterBoolean.read(buf),
             FfiConverterBoolean.read(buf),
             FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterOptionalString.read(buf),
         )
     }
 
@@ -1481,7 +1506,10 @@ public object FfiConverterTypeQuestion: FfiConverterRustBuffer<Question> {
             FfiConverterUInt.allocationSize(value.`reps`) +
             FfiConverterBoolean.allocationSize(value.`starred`) +
             FfiConverterBoolean.allocationSize(value.`retry`) +
-            FfiConverterUInt.allocationSize(value.`timeLimitMs`)
+            FfiConverterUInt.allocationSize(value.`timeLimitMs`) +
+            FfiConverterUInt.allocationSize(value.`taskPosition`) +
+            FfiConverterUInt.allocationSize(value.`taskTotal`) +
+            FfiConverterOptionalString.allocationSize(value.`answer`)
     )
 
     override fun write(value: Question, buf: ByteBuffer) {
@@ -1501,6 +1529,9 @@ public object FfiConverterTypeQuestion: FfiConverterRustBuffer<Question> {
             FfiConverterBoolean.write(value.`starred`, buf)
             FfiConverterBoolean.write(value.`retry`, buf)
             FfiConverterUInt.write(value.`timeLimitMs`, buf)
+            FfiConverterUInt.write(value.`taskPosition`, buf)
+            FfiConverterUInt.write(value.`taskTotal`, buf)
+            FfiConverterOptionalString.write(value.`answer`, buf)
     }
 }
 
@@ -1961,9 +1992,33 @@ enum class QKind {
      */
     HEARING,
     /**
+     * German prompt (+audio), type the English meaning.
+     */
+    MEANING_TYPING,
+    /**
      * English prompt, put the German words in order.
      */
-    ARRANGE;
+    ARRANGE,
+    /**
+     * Context cloze: a real course sentence with the word blanked, pick the German word.
+     */
+    CLOZE,
+    /**
+     * Context cloze: a real course sentence with the word blanked, pick its English meaning.
+     */
+    CLOZE_MEANING,
+    /**
+     * Context cloze: a real course sentence with the word blanked, type the German word.
+     */
+    CLOZE_TYPING,
+    /**
+     * Yes/no recognition: does this word mean the shown translation? (non-typed filler)
+     */
+    YES_NO,
+    /**
+     * Sentence selecting: read a real sentence containing the word and pick its English meaning.
+     */
+    SENTENCE_CHOICE;
 
     
 
@@ -2540,6 +2595,26 @@ public object FfiConverterSequenceTypeWordRow: FfiConverterRustBuffer<List<WordR
             return FfiConverterUInt.lift(
     uniffiRustCallWithError(CoreException) { _status ->
     UniffiLib.uniffi_merkrise_core_fn_func_start_fast_session(
+    
+        
+        FfiConverterOptionalUInt.lower(`level`),
+        FfiConverterUInt.lower(`size`),
+        FfiConverterLong.lower(`now`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * "Learn new" (owner, 2026-10-22): random words from the chapter that the owner has not studied
+         * in this app yet. Each shows its presentation card (term, translation, audio) with an
+         * "already known" option, then asks the English prompt with four German choices.
+         * Returns the number of words.
+         */
+    @Throws(CoreException::class) fun `startLearnNew`(`level`: kotlin.UInt?, `size`: kotlin.UInt, `now`: kotlin.Long): kotlin.UInt {
+            return FfiConverterUInt.lift(
+    uniffiRustCallWithError(CoreException) { _status ->
+    UniffiLib.uniffi_merkrise_core_fn_func_start_learn_new(
     
         
         FfiConverterOptionalUInt.lower(`level`),

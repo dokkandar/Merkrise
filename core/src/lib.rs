@@ -47,8 +47,20 @@ pub enum QKind {
     Typing,
     /// Audio prompt, type what you hear.
     Hearing,
+    /// German prompt (+audio), type the English meaning.
+    MeaningTyping,
     /// English prompt, put the German words in order.
     Arrange,
+    /// Context cloze: a real course sentence with the word blanked, pick the German word.
+    Cloze,
+    /// Context cloze: a real course sentence with the word blanked, pick its English meaning.
+    ClozeMeaning,
+    /// Context cloze: a real course sentence with the word blanked, type the German word.
+    ClozeTyping,
+    /// Yes/no recognition: does this word mean the shown translation? (non-typed filler)
+    YesNo,
+    /// Sentence selecting: read a real sentence containing the word and pick its English meaning.
+    SentenceChoice,
 }
 
 /// A word for the browse screen.
@@ -94,6 +106,12 @@ pub struct Question {
     pub retry: bool, // second try of a card missed earlier in this session (not scored)
     /// Fast review: the time to answer in ms (the UI submits "" when it runs out); 0 = untimed.
     pub time_limit_ms: u32,
+    /// Learn new: 1-based task within this word's set; 0 on its introduction card and elsewhere.
+    pub task_position: u32,
+    /// Learn new: tasks in this word's set (5-6); 0 in regular sessions.
+    pub task_total: u32,
+    /// Context cloze answer (the word that was blanked); None on other cards.
+    pub answer: Option<String>,
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
@@ -183,6 +201,12 @@ struct Review {
     starred: bool,
     #[serde(skip)]
     touched: bool, // changed by the user -> included in export_state
+    /// Learn new: position in this word's deterministic context-phrase deck (shuffle bag).
+    #[serde(default)]
+    context_cursor: u32,
+    /// Learn new: fingerprint of the deck order, so a seed change resets the cursor.
+    #[serde(default)]
+    context_deck: u32,
 }
 
 impl Review {
@@ -196,6 +220,8 @@ impl Review {
             due: 0,
             starred: false,
             touched: false,
+            context_cursor: 0,
+            context_deck: 0,
         }
     }
 }
@@ -210,12 +236,18 @@ struct Q {
     hinted: bool,      // the wand was used: the answer counts as a miss
     retry: bool,       // second try of a missed card: practice, not scored or scheduled
     time_ms: u32,      // fast review: time to answer; 0 = untimed
+    task_pos: u32,     // Learn new: 1-based task within the word's set; 0 elsewhere
+    task_total: u32,   // Learn new: tasks in the word's set; 0 elsewhere
+    srs: bool,         // Learn new: this card applies the word's one schedule update
+    prompt_override: Option<String>, // context cloze: the sentence with the word blanked
+    answer_override: Option<String>, // context cloze: the word that fills the blank
 }
 
 struct Session {
     questions: Vec<Q>,
     pos: usize,
     correct: u32,
+    learn_faults: BTreeSet<usize>, // Learn new: words with at least one missed task
 }
 
 struct LevelMeta {
@@ -240,6 +272,8 @@ struct Core {
     mean_len: f32,
     now: i64, // clock of the current session
     session: Option<Session>,
+    /// Learn new: for each word, other course entries whose term contains its head word.
+    contexts: Vec<Vec<usize>>,
 }
 
 impl Core {
@@ -256,6 +290,7 @@ impl Core {
             mean_len: 1.0,
             now: 0,
             session: None,
+            contexts: Vec::new(),
         }
     }
 }
@@ -327,6 +362,39 @@ fn normalize(s: &str) -> String {
         .filter(|c| c.is_alphanumeric() || c.is_whitespace())
         .collect();
     kept.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Function words that make poor cloze targets or context anchors.
+const STOP: &[&str] = &[
+    "der", "die", "das", "den", "dem", "des", "ein", "eine", "einen", "einem", "einer", "eines",
+    "und", "oder", "aber", "ich", "du", "er", "sie", "es", "wir", "ihr", "zu", "in", "im", "an",
+    "am", "auf", "mit", "von", "vom", "fuer", "fur", "ueber", "uber", "ist", "sind", "war",
+    "waren", "nicht", "kein", "keine", "sich", "mir", "mich", "dir", "dich", "uns", "euch", "als",
+    "wie", "wenn", "dass", "man", "sein", "haben", "hat", "habe", "werden", "wird", "wurde",
+    "aus", "bei", "beim", "nach", "vor", "durch", "gegen", "ohne", "um", "bis", "seit", "waehrend",
+    "wahrend", "auch", "noch", "nur", "schon", "sehr", "mehr", "kann", "koennen", "muss",
+    "muessen", "wollen", "will", "soll", "sollen", "darf", "duerfen",
+];
+
+fn is_stop(t: &str) -> bool {
+    STOP.contains(&t)
+}
+
+/// Content words of a term, normalized; used only to index contexts.
+fn content_tokens(term: &str) -> Vec<String> {
+    term.split_whitespace()
+        .map(normalize)
+        .filter(|t| t.chars().count() >= 3 && !is_stop(t))
+        .collect()
+}
+
+fn fnv1a(bytes: &[u8]) -> u64 {
+    let mut h = 0xcbf29ce484222325u64;
+    for &b in bytes {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x100000001b3);
+    }
+    h
 }
 
 fn build_accepted(term: &str, alts: &[String]) -> Vec<String> {
@@ -405,7 +473,44 @@ fn review_from_progress(p: &MemriseProgress) -> Review {
         due: p.next_date.as_deref().and_then(parse_iso).unwrap_or(0),
         starred: p.starred,
         touched: false,
+        ..Review::new()
     }
+}
+
+/// For every short term, the real course phrases that contain its head word exactly once. Only
+/// phrases of three or more words are used, so a blank is always inside a real sentence.
+fn build_contexts(words: &[Word]) -> Vec<Vec<usize>> {
+    let mut index: HashMap<String, Vec<usize>> = HashMap::new();
+    for (j, w) in words.iter().enumerate() {
+        if w.tokens < 3 {
+            continue;
+        }
+        let mut seen = BTreeSet::new();
+        for t in content_tokens(&w.term) {
+            if seen.insert(t.clone()) {
+                index.entry(t).or_default().push(j);
+            }
+        }
+    }
+    let mut out = vec![Vec::new(); words.len()];
+    for (i, w) in words.iter().enumerate() {
+        if w.tokens > 2 {
+            continue; // long terms are their own context (arrange/typing)
+        }
+        let Some(head) = content_tokens(&w.term).last().cloned() else { continue };
+        let Some(cands) = index.get(&head) else { continue };
+        let mut ctx: Vec<usize> = cands
+            .iter()
+            .copied()
+            .filter(|&j| {
+                j != i && content_tokens(&words[j].term).iter().filter(|t| **t == head).count() == 1
+            })
+            .collect();
+        ctx.sort_by(|&a, &b| words[a].key.cmp(&words[b].key));
+        ctx.dedup();
+        out[i] = ctx;
+    }
+    out
 }
 
 fn promote(s: Stage) -> Stage {
@@ -611,25 +716,32 @@ fn make_q_h(c: &Core, i: usize, kind: QKind, hardness: Option<f32>) -> Q {
         _ => Vec::new(),
     };
     let (tiles, order) = if kind == QKind::Arrange {
-        let original = tiles_of(&c.words[i].term);
-        let mut perm: Vec<usize> = (0..original.len()).collect();
-        let mut tiles = original.clone();
-        for _ in 0..5 {
-            fastrand::shuffle(&mut perm);
-            tiles = perm.iter().map(|&k| original[k].clone()).collect();
-            if tiles != original {
-                break;
-            }
-        }
-        let mut order = vec![0; perm.len()];
-        for (pos, &k) in perm.iter().enumerate() {
-            order[k] = pos;
-        }
-        (tiles, order)
+        arrange_parts(&c.words[i].term)
     } else {
         (Vec::new(), Vec::new())
     };
-    Q { word: i, kind, choices, tiles, order, revealed: 0, hinted: false, retry: false, time_ms: 0 }
+    Q { word: i, kind, choices, tiles, order, revealed: 0, hinted: false, retry: false, time_ms: 0,
+        task_pos: 0, task_total: 0, srs: false, prompt_override: None, answer_override: None }
+}
+
+/// Shuffled tiles for a sentence and the index of each tile in the correct order. Never returns the
+/// already-correct order when there is more than one tile.
+fn arrange_parts(term: &str) -> (Vec<String>, Vec<usize>) {
+    let original = tiles_of(term);
+    let mut perm: Vec<usize> = (0..original.len()).collect();
+    let mut tiles = original.clone();
+    for _ in 0..5 {
+        fastrand::shuffle(&mut perm);
+        tiles = perm.iter().map(|&k| original[k].clone()).collect();
+        if tiles != original {
+            break;
+        }
+    }
+    let mut order = vec![0; perm.len()];
+    for (pos, &k) in perm.iter().enumerate() {
+        order[k] = pos;
+    }
+    (tiles, order)
 }
 
 /// The cards for one word: new words get a presentation card, then multiple choice.
@@ -642,6 +754,71 @@ fn plan(c: &Core, i: usize) -> Vec<Q> {
     } else {
         vec![make_q(c, i, pick_kind(&c.words[i], r.stage, can_choose))]
     }
+}
+
+/// A word's context phrases in a deterministic Fisher-Yates order, plus a fingerprint of the order.
+/// The cursor stored in the review is the only saved state, so the bag survives app restarts.
+fn context_deck(c: &Core, i: usize) -> (Vec<usize>, u32) {
+    let mut deck = c.contexts.get(i).cloned().unwrap_or_default();
+    if deck.is_empty() {
+        return (deck, 0);
+    }
+    let mut rng = fastrand::Rng::with_seed(fnv1a(c.words[i].key.as_bytes()));
+    rng.shuffle(&mut deck);
+    let keys: String = deck.iter().map(|&j| c.words[j].key.as_str()).collect::<Vec<_>>().join("|");
+    (deck, fnv1a(keys.as_bytes()) as u32)
+}
+
+/// A real sentence containing the word; pick its English meaning. Falls back to the word's own
+/// term when the course has no sentence for it.
+/// Order a real course sentence that contains the target word. Falls back to the word's own
+/// term when the course has no sentence for it.
+fn context_arrange_q(c: &Core, target: usize, context: usize) -> Q {
+    let cw = &c.words[context];
+    let (tiles, order) = arrange_parts(&cw.term);
+    let mut q = make_q(c, target, QKind::Arrange);
+    q.tiles = tiles;
+    q.order = order;
+    q.prompt_override = Some(cw.meaning.clone());
+    q.answer_override = Some(cw.term.clone());
+    q
+}
+
+/// The fixed Learn new set: 1 typing, 1 picking, 1 sentence making. The sentence is a real
+/// course sentence containing the word and is drawn from the persistent shuffle bag.
+fn learn_group(c: &mut Core, i: usize) -> Vec<Q> {
+    let (deck, fingerprint) = context_deck(c, i);
+    let stored = c.reviews[i].context_deck;
+    let mut cursor = c.reviews[i].context_cursor as usize;
+    if stored != fingerprint || cursor >= deck.len() {
+        cursor = 0;
+    }
+    let take = 1.min(deck.len().saturating_sub(cursor));
+    let drawn: Vec<usize> = deck[cursor..cursor + take].to_vec();
+    let next_cursor = if cursor + take >= deck.len() { 0 } else { (cursor + take) as u32 };
+
+    let tasks = vec![
+        make_q(c, i, QKind::Typing), // type the German word
+        make_q(c, i, QKind::Mc),     // pick the German word from the English meaning
+        match drawn.first() {
+            Some(&j) => context_arrange_q(c, i, j), // make the sentence that contains the word
+            None => make_q(c, i, QKind::Arrange),   // no course sentence: order the word itself
+        },
+    ];
+
+    let total = tasks.len() as u32;
+    let mut intro = make_q(c, i, QKind::Presentation);
+    intro.task_total = total;
+    let mut qs = vec![intro];
+    for (k, mut q) in tasks.into_iter().enumerate() {
+        q.task_pos = k as u32 + 1;
+        q.task_total = total;
+        q.srs = q.task_pos == total;
+        qs.push(q);
+    }
+    c.reviews[i].context_cursor = next_cursor;
+    c.reviews[i].context_deck = fingerprint;
+    qs
 }
 
 /// Typing is boring (owner, 2026-10-21): at most 10 % of a session's tasks are typed
@@ -671,6 +848,7 @@ fn scored(q: &Q) -> bool {
     q.kind != QKind::Presentation && !q.retry
 }
 
+
 // ------------------------------------------------------------ the API
 
 #[uniffi::export]
@@ -684,6 +862,7 @@ pub fn load_seed(json: String) -> Result<u32, CoreError> {
     c.initial.clear();
     c.days.clear();
     c.orphans.clear();
+    c.contexts.clear();
     c.typing_credit = 0;
     c.session = None;
     for level in parsed.levels {
@@ -721,6 +900,7 @@ pub fn load_seed(json: String) -> Result<u32, CoreError> {
         (c.words.iter().map(|w| w.len).sum::<usize>() as f32 / n as f32).max(1.0)
     };
     c.reviews = c.initial.clone();
+    c.contexts = build_contexts(&c.words);
     Ok(n as u32)
 }
 
@@ -836,8 +1016,45 @@ pub fn start_session(level: Option<u32>, size: u32, now: i64) -> Result<u32, Cor
     speed_round(c, &mut questions);
     c.typing_credit = limit_typing(c, &mut questions);
     c.now = now;
-    c.session = Some(Session { questions, pos: 0, correct: 0 });
+    c.session = Some(Session { questions, pos: 0, correct: 0, learn_faults: BTreeSet::new() });
     Ok(picked.len() as u32)
+}
+
+/// "Learn new" (owner, 2026-10-22): random words from the chapter that the owner has not studied
+/// in this app yet. Each shows its presentation card (term, translation, audio) with an
+/// "already known" option, then asks the English prompt with four German choices.
+/// Returns the number of words.
+#[uniffi::export]
+pub fn start_learn_new(level: Option<u32>, size: u32, now: i64) -> Result<u32, CoreError> {
+    let mut guard = CORE.lock().unwrap();
+    let c = &mut *guard;
+    if c.words.len() < 4 {
+        return Err(CoreError::NoWords); // four options need four words
+    }
+    let candidates: Vec<usize> = match level {
+        Some(ix) => c
+            .levels
+            .iter()
+            .find(|l| l.index == ix)
+            .map(|l| l.members.clone())
+            .unwrap_or_default(),
+        None => (0..c.words.len()).collect(),
+    };
+    let mut fresh: Vec<usize> = candidates.into_iter().filter(|&i| !c.reviews[i].touched).collect();
+    if fresh.is_empty() {
+        return Err(CoreError::NoWords); // every word here has been studied already
+    }
+    fastrand::shuffle(&mut fresh);
+    fresh.truncate(size.max(1) as usize);
+    let mut groups: Vec<Vec<Q>> = Vec::new();
+    for &i in &fresh {
+        groups.push(learn_group(c, i));
+    }
+    fastrand::shuffle(&mut groups); // keeps each presentation next to its task set
+    let questions: Vec<Q> = groups.into_iter().flatten().collect();
+    c.now = now;
+    c.session = Some(Session { questions, pos: 0, correct: 0, learn_faults: BTreeSet::new() });
+    Ok(fresh.len() as u32)
 }
 
 /// A timed choice card for `word`; t = 0 is the easy end (long clock, unlike wrong options), t = 1 the
@@ -932,7 +1149,7 @@ pub fn start_fast_session(level: Option<u32>, size: u32, now: i64) -> Result<u32
         })
         .collect();
     c.now = now;
-    c.session = Some(Session { questions, pos: 0, correct: 0 });
+    c.session = Some(Session { questions, pos: 0, correct: 0, learn_faults: BTreeSet::new() });
     Ok(n as u32)
 }
 
@@ -943,10 +1160,15 @@ pub fn current_question() -> Option<Question> {
     let s = c.session.as_ref()?;
     let q = s.questions.get(s.pos)?;
     let (w, r) = (&c.words[q.word], &c.reviews[q.word]);
-    let (prompt, audio) = match q.kind {
-        QKind::Presentation | QKind::Reversed => (w.term.clone(), w.audio_file.clone()),
-        QKind::Mc | QKind::Typing | QKind::Arrange => (w.meaning.clone(), None),
-        QKind::AudioMc | QKind::Hearing => (String::new(), w.audio_file.clone()),
+    let (prompt, audio) = if let Some(p) = &q.prompt_override {
+        (p.clone(), None) // context cloze: the sentence with the blank
+    } else {
+        match q.kind {
+            QKind::Presentation | QKind::Reversed | QKind::MeaningTyping => (w.term.clone(), w.audio_file.clone()),
+            QKind::Mc | QKind::Typing | QKind::Arrange => (w.meaning.clone(), None),
+            QKind::AudioMc | QKind::Hearing => (String::new(), w.audio_file.clone()),
+            QKind::Cloze | QKind::ClozeMeaning | QKind::ClozeTyping | QKind::YesNo | QKind::SentenceChoice => (String::new(), None),
+        }
     };
     let presentation = q.kind == QKind::Presentation;
     let detail = [w.pos.clone(), w.forms.clone()]
@@ -972,6 +1194,9 @@ pub fn current_question() -> Option<Question> {
         starred: r.starred,
         retry: q.retry,
         time_limit_ms: q.time_ms,
+        task_position: q.task_pos,
+        task_total: q.task_total,
+        answer: q.answer_override.clone(),
     })
 }
 
@@ -993,26 +1218,51 @@ pub fn submit_answer(user_input: String) -> AnswerFeedback {
             }
         }
     };
-    let (word, kind, timed) = (s.questions[s.pos].word, s.questions[s.pos].kind, s.questions[s.pos].time_ms > 0);
     let q = &s.questions[s.pos];
-    let (w, r) = (&words[q.word], &mut reviews[q.word]);
+    let (word, kind, timed) = (q.word, q.kind, q.time_ms > 0);
+    let learn = q.task_total > 0 && q.kind != QKind::Presentation;
+    let (srs, task_pos, task_total) = (q.srs, q.task_pos, q.task_total);
+    let answer_override = q.answer_override.clone();
+    let hinted = q.hinted;
+    let is_scored = scored(q);
+    let (w, r) = (&words[word], &mut reviews[word]);
     let typed = normalize(&user_input);
-    let (correct, expected) = match q.kind {
+    let (correct, expected) = match kind {
         QKind::Presentation => (true, w.meaning.clone()),
         QKind::Mc | QKind::AudioMc => (typed == normalize(&w.term), w.term.clone()),
-        QKind::Reversed => (typed == normalize(&w.meaning), w.meaning.clone()),
-        QKind::Typing | QKind::Hearing | QKind::Arrange => {
-            (w.accepted.contains(&typed), w.term.clone())
+        QKind::Reversed | QKind::MeaningTyping => (typed == normalize(&w.meaning), w.meaning.clone()),
+        QKind::Typing | QKind::Hearing => (w.accepted.contains(&typed), w.term.clone()),
+        QKind::Arrange => {
+            if let Some(a) = &answer_override {
+                (typed == normalize(a), a.clone())
+            } else {
+                (w.accepted.contains(&typed), w.term.clone())
+            }
         }
+        QKind::Cloze | QKind::ClozeTyping | QKind::YesNo | QKind::SentenceChoice => {
+            let a = answer_override.clone().unwrap_or_default();
+            (typed == normalize(&a), a)
+        }
+        QKind::ClozeMeaning => (typed == normalize(&w.meaning), w.meaning.clone()),
     };
-    let hinted = q.hinted;
     let correct = correct && !hinted;
-    let is_scored = scored(q);
     let mut next_due = 0;
     if is_scored {
         let len_factor = (w.len as f32 / *mean_len).clamp(0.6, 1.6);
-        schedule(r, correct, *now, pace, len_factor);
-        next_due = r.due;
+        if learn {
+            // A Learn new word is scheduled once, after its last task, and only if no task was missed.
+            if !correct {
+                s.learn_faults.insert(word);
+            }
+            if srs {
+                let all_ok = correct && !s.learn_faults.contains(&word);
+                schedule(r, all_ok, *now, pace, len_factor);
+                next_due = r.due;
+            }
+        } else {
+            schedule(r, correct, *now, pace, len_factor);
+            next_due = r.due;
+        }
         days.insert(now.div_euclid(86_400));
         if correct {
             s.correct += 1;
@@ -1023,10 +1273,13 @@ pub fn submit_answer(user_input: String) -> AnswerFeedback {
     // A scored miss comes back once, ~3 cards later, as a fresh unscored card (spec §3), except in a
     // timed fast review, which has no second tries. make_q needs the whole Core, so the retry is
     // built after the field borrows above end.
-    if is_scored && !correct && !timed {
+    if is_scored && !correct && !timed && !learn {
         let mut session = guard.session.take().expect("session checked above");
         let mut retry = make_q(&guard, word, kind);
         retry.retry = true;
+        retry.task_pos = task_pos; // the retry belongs to the task it repeats on the egg indicator
+        retry.task_total = task_total;
+        retry.srs = false;
         // ~3 cards later, but never inside the timed speed round at the end of the session
         let first_timed = session.questions.iter().position(|q| q.time_ms > 0).unwrap_or(session.questions.len());
         let at = (session.pos + 3).min(first_timed).max(session.pos);
@@ -1322,10 +1575,13 @@ mod tests {
 
     /// The input that answers the current question correctly.
     fn right_answer(q: &Question) -> String {
+        if let Some(a) = &q.answer {
+            return a.clone();
+        }
         let c = CORE.lock().unwrap();
         let w = &c.words[q.word as usize];
         match q.kind {
-            QKind::Reversed => w.meaning.clone(),
+            QKind::Reversed | QKind::MeaningTyping => w.meaning.clone(),
             QKind::Arrange => w.term.clone(),
             _ => w.term.clone(),
         }
@@ -2015,6 +2271,174 @@ mod tests {
     }
 
     #[test]
+    fn learn_new_gives_the_fixed_three_task_mix() {
+        let _g = setup();
+        assert_eq!(start_learn_new(Some(1), 3, NOW).unwrap(), 3);
+        let c = CORE.lock().unwrap();
+        let mut by_word: BTreeMap<usize, Vec<&Q>> = BTreeMap::new();
+        for q in &c.session.as_ref().unwrap().questions {
+            by_word.entry(q.word).or_default().push(q);
+        }
+        assert_eq!(by_word.len(), 3);
+        for qs in by_word.values() {
+            assert_eq!(qs.iter().filter(|q| q.kind == QKind::Presentation).count(), 1);
+            let tasks: Vec<&Q> = qs.iter().copied().filter(|q| q.kind != QKind::Presentation).collect();
+            assert_eq!(tasks.len(), 3, "{:?}", tasks.iter().map(|q| q.kind).collect::<Vec<_>>());
+            assert_eq!(tasks[0].kind, QKind::Typing);
+            assert_eq!(tasks[1].kind, QKind::Mc);
+            assert_eq!(tasks[2].kind, QKind::Arrange);
+            assert_eq!(tasks.iter().filter(|q| q.srs).count(), 1, "one schedule update per word");
+            assert!(tasks.last().unwrap().srs);
+            for (k, q) in tasks.iter().enumerate() {
+                assert_eq!(q.task_pos, k as u32 + 1);
+                assert_eq!(q.task_total, tasks.len() as u32);
+            }
+            let mut shapes: Vec<QKind> = tasks.iter().map(|q| q.kind).collect();
+            shapes.sort_by_key(|k| format!("{k:?}"));
+            shapes.dedup();
+            assert_eq!(shapes.len(), 3, "a task shape repeated: {shapes:?}");
+            assert!(!c.reviews[qs[0].word].touched, "only words not studied in this app are taught");
+            assert_eq!(qs[0].task_total, tasks.len() as u32, "the intro shows 0 of the same total");
+        }
+    }
+
+    #[test]
+    fn learn_new_miss_is_not_repeated_within_the_word() {
+        let _g = setup();
+        start_learn_new(Some(1), 1, NOW).unwrap();
+        submit_answer(String::new()); // the introduction
+        let total = current_question().unwrap().total;
+        assert!(!submit_answer("zzz".into()).correct);
+        assert_eq!(current_question().unwrap().total, total, "no retry card is inserted");
+    }
+
+    const CONTEXT_SEED: &str = r#"{"levels":[{"index":1,"title":"Contexts","items":[
+      {"term":"das Wetter","meaning":"the weather","pos_tag":"n","audio":["w.mp3"]},
+      {"term":"die Politik","meaning":"the politics","pos_tag":"n","audio":["p.mp3"]},
+      {"term":"der Sport","meaning":"the sport","pos_tag":"n","audio":["s.mp3"]},
+      {"term":"das Thema","meaning":"the topic","pos_tag":"n","audio":["t.mp3"]},
+      {"term":"die Quelle","meaning":"the source","pos_tag":"n","audio":["q.mp3"]},
+      {"term":"das Wetter ist heute schön","meaning":"the weather is nice today","audio":["c1.mp3"]},
+      {"term":"ich mag das Wetter im Sommer","meaning":"I like the weather in summer","audio":["c2.mp3"]},
+      {"term":"bei dem Wetter bleibe ich zu Hause","meaning":"in this weather I stay home","audio":["c3.mp3"]},
+      {"term":"wir reden immer über das Wetter","meaning":"we always talk about the weather","audio":["c4.mp3"]}
+    ]}]}"#;
+
+    #[test]
+    fn sentence_bag_gives_a_new_sentence_each_session() {
+        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        load_seed(CONTEXT_SEED.to_string()).unwrap();
+        let target = {
+            let c = CORE.lock().unwrap();
+            c.words.iter().position(|w| w.term == "das Wetter").unwrap()
+        };
+        let group = || {
+            let mut c = CORE.lock().unwrap();
+            learn_group(&mut c, target)
+        };
+        let g1 = group();
+        assert_eq!(g1[1].kind, QKind::Typing);
+        assert_eq!(g1[2].kind, QKind::Mc);
+        assert_eq!(g1[3].kind, QKind::Arrange);
+        let first = g1[3].answer_override.clone().unwrap();
+        assert!(first.contains("Wetter"), "not a sentence with the word: {first}");
+        assert!(g1[3].tiles.len() >= 3, "not a real sentence to arrange");
+        assert!(g1[3].prompt_override.is_some(), "the sentence meaning is the prompt");
+
+        // One context per session: all four are used before the bag refills.
+        let mut seen = vec![first.clone()];
+        for _ in 0..3 {
+            let g = group();
+            let answer = g[3].answer_override.clone().unwrap();
+            assert!(!seen.contains(&answer), "a sentence repeated before the bag emptied: {answer}");
+            seen.push(answer);
+        }
+        let again = group();
+        assert_eq!(again[3].answer_override.clone().unwrap(), first);
+    }
+
+    #[test]
+    fn learn_new_answer_set_updates_the_word_once() {
+        let _g = setup();
+        start_learn_new(Some(1), 1, NOW).unwrap();
+        let word = {
+            let c = CORE.lock().unwrap();
+            c.session
+                .as_ref()
+                .unwrap()
+                .questions
+                .iter()
+                .find(|q| q.kind != QKind::Presentation)
+                .unwrap()
+                .word
+        };
+        let before = CORE.lock().unwrap().reviews[word].clone();
+        while let Some(q) = current_question() {
+            submit_answer(if q.kind == QKind::Presentation { String::new() } else { right_answer(&q) });
+        }
+        let after = CORE.lock().unwrap().reviews[word].clone();
+        assert_eq!(after.reps, before.reps + 1, "exactly one schedule update");
+        assert_eq!(after.stage, promote(before.stage));
+        assert!(after.due > NOW, "the single update must schedule the word");
+    }
+
+    #[test]
+    fn learn_new_miss_demotes_once_at_the_end() {
+        let _g = setup();
+        start_learn_new(Some(1), 1, NOW).unwrap();
+        let word = {
+            let c = CORE.lock().unwrap();
+            c.session
+                .as_ref()
+                .unwrap()
+                .questions
+                .iter()
+                .find(|q| q.kind != QKind::Presentation)
+                .unwrap()
+                .word
+        };
+        let before = CORE.lock().unwrap().reviews[word].clone();
+        let q = current_question().unwrap();
+        assert_eq!(q.kind, QKind::Presentation);
+        submit_answer(String::new());
+        let q = current_question().unwrap();
+        assert_eq!(q.task_position, 1);
+        assert!(!submit_answer("zzz".into()).correct);
+        while let Some(q) = current_question() {
+            submit_answer(if q.kind == QKind::Presentation { String::new() } else { right_answer(&q) });
+        }
+        let after = CORE.lock().unwrap().reviews[word].clone();
+        assert_eq!(after.reps, 0);
+        assert_eq!(after.lapses, before.lapses + 1);
+        assert_eq!(after.stage, demote(before.stage));
+        assert_eq!(after.due, NOW + 600);
+    }
+
+    #[test]
+    fn learn_new_needs_unseen_words() {
+        let _g = setup();
+        assert!(start_learn_new(Some(9), 5, NOW).is_err(), "unknown level");
+        {
+            let mut c = CORE.lock().unwrap();
+            for r in c.reviews.iter_mut() {
+                r.touched = true;
+            }
+        }
+        assert!(start_learn_new(None, 5, NOW).is_err(), "every word was studied already");
+    }
+
+    #[test]
+    fn already_known_drops_the_learn_new_tasks() {
+        let _g = setup();
+        start_learn_new(Some(1), 1, NOW).unwrap();
+        let q = current_question().unwrap();
+        assert_eq!(q.kind, QKind::Presentation);
+        mark_known(q.word);
+        assert!(current_question().is_none(), "its tasks must be gone too");
+        assert_eq!(CORE.lock().unwrap().reviews[q.word as usize].stage, Stage::Known);
+    }
+
+    #[test]
     fn arrange_cards_use_shuffled_words_and_accept_the_right_order() {
         let _g = setup();
         let mut c = CORE.lock().unwrap();
@@ -2024,7 +2448,7 @@ mod tests {
         let mut want: Vec<String> = c.words[4].term.split_whitespace().map(String::from).collect();
         want.sort();
         assert_eq!(sorted, want);
-        c.session = Some(Session { questions: vec![q], pos: 0, correct: 0 });
+        c.session = Some(Session { questions: vec![q], pos: 0, correct: 0, learn_faults: BTreeSet::new() });
         c.now = NOW;
         drop(c);
         let fb = submit_answer("Wir können immer über das Wetter reden.".into());
@@ -2036,7 +2460,7 @@ mod tests {
         let mut c = CORE.lock().unwrap();
         let q = make_q(&c, word, QKind::Arrange);
         let order = q.order.iter().map(|&k| k as u32).collect();
-        c.session = Some(Session { questions: vec![q], pos: 0, correct: 0 });
+        c.session = Some(Session { questions: vec![q], pos: 0, correct: 0, learn_faults: BTreeSet::new() });
         c.now = NOW;
         order
     }
@@ -2045,7 +2469,7 @@ mod tests {
     fn session_of(words: &[usize], kind: QKind) {
         let mut c = CORE.lock().unwrap();
         let questions = words.iter().map(|&w| make_q(&c, w, kind)).collect();
-        c.session = Some(Session { questions, pos: 0, correct: 0 });
+        c.session = Some(Session { questions, pos: 0, correct: 0, learn_faults: BTreeSet::new() });
         c.now = NOW;
     }
 

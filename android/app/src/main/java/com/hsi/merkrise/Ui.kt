@@ -34,6 +34,12 @@ internal const val LIGHT = "sans-serif-light"
 internal const val BLACK = "sans-serif-black"
 internal const val REGULAR = "sans-serif"
 
+/** Egg photos, in order: the progress indicator from first meeting a word to learning it. */
+internal val EGGS = intArrayOf(
+    R.drawable.egg_1, R.drawable.egg_2, R.drawable.egg_3, R.drawable.egg_4,
+    R.drawable.egg_5, R.drawable.egg_6, R.drawable.egg_7,
+)
+
 internal const val MATCH = ViewGroup.LayoutParams.MATCH_PARENT
 internal const val WRAP = ViewGroup.LayoutParams.WRAP_CONTENT
 
