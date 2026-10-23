@@ -182,7 +182,11 @@ with body `{"session_source_id":690189,"session_source_type":
 ---
 
 ## 6. Design docs (deeper detail)
-- **Spec (design authority):** `docs/superpowers/specs/2026-10-20-merkrise-v1-design.md`
+- **⭐ Learning engine (how teaching + spaced repetition work):**
+  `docs/LEARNING_ENGINE.md` — the authority for the SRS/teaching flow (the
+  difficulty + time ladders, sessions, progress seeding, schema, pseudocode).
+  Read this before building step 1 of §7.
+- **Spec (overall design authority):** `docs/superpowers/specs/2026-10-20-merkrise-v1-design.md`
   — full schema, the SM-2 + word-length SRS design, the 5-stage Memrise
   progression, Memrise→SM-2 progress-import mapping, the bulk-import format
   (§16) and folder lesson-package format (§16.6).
@@ -192,11 +196,11 @@ with body `{"session_source_id":690189,"session_source_type":
 ---
 
 ## 7. Next steps (recommended order)
-1. **Persistence + spaced repetition** (the big one): add `rusqlite`, a
-   `review_state` table, the SM-2 + word-length scheduler and the
-   new→…→known stage progression (spec §5/§6); import the user's captured
-   `memrise_progress` so mastered words aren't re-tested. Replaces today's
-   random sessions.
+1. **Persistence + spaced repetition** (the big one): implement
+   **`docs/LEARNING_ENGINE.md`** — SQLite `review_state`, the two-ladder scheduler
+   (12h→…→180d intervals coupled to MC→reversed→audio→typing), learn-new +
+   review sessions, and seeding from the user's captured `memrise_progress` so
+   mastered words aren't re-taught. Replaces today's random sessions.
 2. Settings (pace / length-weight), streaks, progress; the reversed-MC and
    audio-MC modes.
 3. Runtime importers: the folder lesson-package (§16.6) and TSV bulk-import
