@@ -1,10 +1,14 @@
 # Merkrise — Handoff
 
 **For:** the next developer or agent taking over this project.
-**Updated:** 2026-10-22 (all work described here was done on 2026-10-21).
-**Branch:** `lessons-srs-fast-review` (2 commits on top of `480f17e`, **not pushed**; `origin` =
-`git@github.com:dokkandar/Merkrise.git`, trunk = `main`). Supersedes the 2026-10-21 morning handoff,
-which described a random-quiz prototype; everything below is the state after the full build-out.
+**Updated:** 2026-10-23. The 2026-10-21 build-out is committed on `lessons-srs-fast-review`; the
+2026-10-22/23 pass (Learn new, egg + progress ring, native keyboard, sound effects) **and the 2026-10-23
+"oct 2026 UI correction" redesign** (§1 Screens, plan `docs/superpowers/plans/2026-10-23-ui-correction.md`)
+are in the **uncommitted working tree**; the redesign is built into the 2026-10-23 16:13 APK, not yet installed.
+**Branch:** `lessons-srs-fast-review` (HEAD `4d3f6f1`, 2 commits on top of `480f17e`, **not pushed**;
+`origin` = `git@github.com:dokkandar/Merkrise.git`, trunk = `main`). Supersedes the 2026-10-21 morning
+handoff, which described a random-quiz prototype; everything below is the state after the full build-out
+plus the 2026-10-22/23 pass.
 
 Merkrise is a **personal, offline Android app** for studying German vocabulary: a self-hosted
 Memrise-style trainer built from the owner's own captured *A2 German: Beyond Beginner* Memrise course
@@ -18,9 +22,13 @@ Memrise-style trainer built from the owner's own captured *A2 German: Beyond Beg
 1. **Where the work lives.** On this Windows PC the working tree is **`E:\merkriser\build\merkrise`**
    (it has the real `.git`, `capture/`, `resources/` and the bundled assets). `E:\merkriser\merkrise.zip` is
    the original 1.2 GB upload; `E:\merkriser\merkrise` is a half-extracted leftover: ignore it.
-   The latest debug APK is copied to **`E:\merkriser\merkrise-debug-arm64.apk`** (both ABIs, ~131 MB).
+   The latest debug APK is copied to **`E:\merkriser\merkrise-debug-arm64.apk`** (both ABIs, ~131 MB,
+   built 2026-10-22 16:04); the same APK is saved **on the phone** at
+   `/sdcard/Download/merkrise-debug-arm64.apk` (see §2.5).
 2. **Rust owns all logic, Kotlin only draws.** Stages, scheduling, session building, answer checking,
    scoring, stats and the reminder time all live in `core/src/lib.rs`. UI → core, never the reverse.
+   The one exception is presentational session bookkeeping in `MainActivity` (`learnDone` / `learnScored`
+   for the egg image); it is derived from `taskPosition` / `taskTotal` and never changes scheduling.
 3. **Two rules that protect the owner's progress** (see §4.5 and §9): the saved-progress key is
    `"{item.level}:{term}"`, and **never copy `capture/seed.json` over the bundled `seed.json`**.
 4. **After any core API change:** rebuild the `.so`, regenerate the Kotlin bindings, run `cargo test`,
@@ -49,6 +57,24 @@ Memrise-style trainer built from the owner's own captured *A2 German: Beyond Beg
 - A **topic** = title minus its trailing number ("Sports 3" → "Sports"); a merged lesson is titled
   "A + B 1" and filed under the first topic ("Useful Phrases + Interests 1" → "Useful Phrases").
 
+### Learn new (2026-10-22)
+- Reached from a chapter ("Learn new" next to "Study this chapter"); it is **not on Home**. The core call is
+  `start_learn_new(level, size, now)`; the UI passes **5 words** (fixed, not `new_per_session`).
+- Only words **not yet touched in this app** (`Review.touched == false`) are eligible; they are shuffled and
+  capped. Every word already studied in the chapter → "No new words here".
+- Each word gets its **presentation card** (term, English, audio, **Already known**) and then exactly
+  **three scored tasks** in this order: **Typing** (type the German), **Mc** (pick the German), **Arrange**
+  (order a real course sentence containing the word; falls back to ordering the word itself).
+- **No retry cards in Learn new**, and no speed round / typing cap. Each task is scored for the session
+  score, but the **word is scheduled only once**, on the last task: all three tasks correct → one normal
+  promotion; any missed task → the normal demote path once (a New word lands at `Mc`). The other tasks never
+  touch the SRS state.
+- The sentence comes from a **persistent shuffle bag** per word: `Review.context_cursor` + a deck-order
+  fingerprint in `Review.context_deck` (both saved in `progress.json`). One real sentence per word per
+  Learn new session, every sentence before a repeat; a seed change resets the cursor. Contexts are
+  precomputed by `build_contexts` (short head word inside a 3+ word course phrase, exactly once).
+- After the results screen, "Learn more new words" starts another 5-word set for the same chapter.
+
 ### Seven card types
 | Kind (`QKind`) | Prompt | Answer |
 |---|---|---|
@@ -60,6 +86,10 @@ Memrise-style trainer built from the owner's own captured *A2 German: Beyond Beg
 | `Hearing` ("Write the hearing") | audio only | type the German |
 | `Arrange` ("Arrange the sentence") | English | tap the German words (tiles) into order |
 
+- These seven are the kinds the regular session builder produces. The `QKind` enum still carries the old
+  `Cloze*`, `YesNo`, `MeaningTyping` and `SentenceChoice` variants; nothing constructs them now.
+- **Learn new is a fixed drill, not the stage ladder:** Presentation → Typing → Mc → Arrange (one sentence),
+  then one SRS update on the last task (§1, "Learn new").
 - New words get a `Presentation` card, then an `Mc` card, kept together.
 - **Every item of 3+ German words is always an `Arrange` card at the Typing / Known stages** (up to 15
   tiles; duplicate words are separate tiles; a punctuation-only token is merged into its neighbour tile).
@@ -71,7 +101,7 @@ Memrise-style trainer built from the owner's own captured *A2 German: Beyond Beg
 
 ### Learning aids
 - **In-session retry:** a missed card comes back once, ~3 cards later, as a fresh card (new shuffle) with
-  the label "Second try — not scored". It is not scheduled and does not count.
+  the label "Second try — not scored". It is not scheduled and does not count. **Learn new has no retries.**
 - **Magic wand** on Arrange cards: reveals the sentence word by word (the answer line becomes exactly the
   first *k* correct tiles, never fewer than the user already placed). **A wand-revealed card counts as a
   miss**; the first tap shows a one-time warning toast; the feedback chip says "revealed with the wand".
@@ -93,15 +123,31 @@ Memrise-style trainer built from the owner's own captured *A2 German: Beyond Beg
   animations are off); it stops on pause and resumes with the remaining time (§4.7).
 
 ### Screens (Kotlin, `MainActivity.kt`)
+**2026-10-23 redesign** to the Figma boards titled "oct 2026 UI correction" (page 1, around node 6386:50;
+top row of each board = target). Scale: 1320 Figma units = 412 dp (**dp = units / 3.2**); the measured
+spec is in the plan doc. Header = ⋯ (menu: Chapters, Stats, Settings; hidden during a session) · ⌂ Home ·
+logo · "Hello <name>" over the **total of correct answers** (`Stats.correct_total`) · avatar (Profile), with a
+subtitle line; **no bottom bar**. Home = course card (photo, bar), three stat pills, **Classic Review**
+(= the old Start session) and **Fast Review** squares. Every card and answer screen shares a top block:
+"+N" (session correct) over a **Learned** button (= the old "already learnt"), the egg in a static yellow
+ring, the megaphone (plays the prompt audio; invisible when the card has none, so Mc/Typing/Arrange never
+give the answer away), and on cards "answered/total" over a 15 dp bar (fills per task). Options are full-width
+rows; Arrange has blue placed tiles and the wand at the end of the bank's first row; Typing/Hearing have a big
+dark box and an ü ö ß ä row, ↵ submits, and the layout changes while the keyboard is up (`onIme`). The answer
+screen shows what the card asked, the answer, and "your answer:" with the wrong words in red. Timed cards
+(Fast review, speed round) show a **pie clock** (`PieTimer.kt`), a small Continue (= skip, a miss) and colour
+the options in place (wrong pick red, right option green). Gone: easy 👌 / hard 😣 buttons, stage emoji strip,
+hint line, "next review", the "Nice try!" popup, the timer bar.
+The rest of this list predates the redesign (content unchanged):
 Welcome (first launch: asks a name only; **no account/login**) · Home (greeting, "Currently learning" course
 card with progress bar, tiles due-today / streak / learning, **Start session**, **Chapters**, **Fast
 review**) · Chapters (19 topic cards, accordion, one open at a time) · **Jump list** (all lessons by topic,
-current one outlined) · Lesson detail (header **‹ title ▾ ›**, progress, **Study this chapter**, **Fast
-review**, **"Lessons in <topic>"** numbered circles that jump between lessons, word list with stage + due
-date + audio) · Question screens (all kinds, incl. the custom **QWERTZ keyboard with ä ö ü ß** for typed
-answers) · Feedback · Results · **Stats** (chart icon) · **Profile** (person icon) · **Settings** (words per
-session 5–50, new words per session 0–30, long-word pace 0–100 %, review spacing ×0.5–×2.0, auto audio,
-**Send a test reminder**, Reset progress).
+current one outlined) · Lesson detail (header **‹ title ▾ ›**, progress, **Study this chapter**,
+**Learn new**, **Fast review**, **"Lessons in <topic>"** numbered circles that jump between lessons,
+word list with stage + due date + audio) · Question screens (all kinds, incl. **native IME typing with an
+ä ö ü ß key row above the field**) · Feedback · Results · **Stats** (chart icon) · **Profile** (person icon)
+· **Settings** (words per session 5–50, new words per session 0–30, long-word pace 0–100 %, review spacing
+×0.5–×2.0, auto audio, **Send a test reminder**, Reset progress).
 
 ### Reminders
 "N words ready to review" notification (text "20+" above 20) when **≥ 5 words are due**, at least **4 h
@@ -112,18 +158,32 @@ notification starts a session of due words (unless a session is already on scree
 ### Look and feel
 Dark purple / yellow palette from the Figma (§6), Roboto, edge-to-edge, portrait only, launcher icon =
 yellow wordmark on purple (adaptive icon, `drawable-nodpi/ic_launcher_foreground.png`).
+- **Progress badge** at the top of every question and feedback screen: a 152 dp custom `ProgressRing`
+  (yellow arc, 7 dp stroke, from 12 o'clock) with a 112 dp **egg photo** (`egg_1..7.png`) centred inside.
+- **Ring = answered cards / total cards** in every mode, including Learn new: it advances after **every
+  answered task**, matching the linear bar. (A presentation/Continue counts.)
+- **Egg image** (separate from the ring): Learn new = words completed / 5 (images 1–7); regular and timed
+  sessions = share of correct scored answers, computed live; image 7 only when the session is finished with
+  ≥ 80 %. A miss leaves the image where it was.
+- **Sound effects:** `res/raw/correct.mp3` / `wrong.mp3` via a `SoundPool` (usage `GAME`, sonification),
+  played at **0.05** per stream (about 5.1 dB below 0.09, which was 5 dB below 0.16). Auto audio of the
+  German word is delayed so the effect is heard first (1350 ms after a correct, 600 ms after a miss).
 
 ### Verification status (be honest about this)
-- **Core:** `cargo test -p merkrise-core` = **57 tests green** (55 unit + 2 integration on the real
-  1,681-word seed). The first stage test was mutation-checked (broke promotion, saw it fail, restored).
+- **Core:** `cargo test -p merkrise-core` = **62 unit + 4 real-seed integration tests green**
+  (2026-10-23). The first stage test was mutation-checked (broke promotion, saw it fail, restored).
 - **Progress keys:** checked that all 1,681 old keys exist in the 77-lesson seed (0 missing, 0 extra).
 - **Kotlin/UI:** build-checked and read through; **no automated UI tests**. On the phone the build session
   saw Welcome, Home, Settings and the old typing screen; the owner reported the jump list working and
   later asked for the lesson circles and the icon fix (both built afterwards).
+- **2026-10-22/23 on the phone:** the owner used Learn new (reported the ring filling only per word — that
+  was the older installed build; the per-task ring was then installed), the native keyboard with the
+  ä ö ü ß row, the egg badge and the sound effects. The owner asked for two rounds of volume reduction;
+  the current build is 0.05.
 - **Not confirmed on a device:** notification delivery (Samsung One UI may put the app to sleep), timer
   pause/resume, the speed round, the mistake highlighting, the lesson circles and the icon fix. Check
   `adb shell dumpsys package com.hsi.merkrise | grep lastUpdateTime` to see which build is installed
-  before believing a bug report (the owner once described a stale build).
+  before believing a bug report (the owner once described a stale build). The 16:04 build is installed.
 
 ---
 
@@ -164,7 +224,7 @@ $ADB shell am start -n com.hsi.merkrise/.MainActivity
 ```sh
 sh scripts/build-core-android.sh      # cargo-ndk, arm64-v8a + x86_64 -> android/app/src/main/jniLibs
 sh scripts/gen-bindings.sh            # uniffi -> android/.../core/merkrise_core.kt (COMMITTED)
-cargo test -p merkrise-core           # 55 unit + 2 integration tests
+cargo test -p merkrise-core           # 62 unit + 4 integration tests
 cd android && ./gradlew --no-daemon :app:assembleDebug
 ```
 `gen-bindings.sh` reads the `.so` metadata, so the `.so` must be rebuilt **first**. A plain
@@ -194,6 +254,10 @@ owner tapping Allow (state `unauthorized` until then). `adb` is not on PATH:
 `C:\Users\hsili\AppData\Local\Android\Sdk\platform-tools\adb.exe`.
 - **Ask the owner before every install and never inject taps** (he is often using the phone).
 - `adb -s R5CW213FECX install -r <apk>` keeps the data (same debug signature, versionCode 1).
+- The latest APK is already **on the phone**: `/sdcard/Download/merkrise-debug-arm64.apk`
+  (131,185,124 bytes, built 2026-10-22 16:04, installed 16:04:55), so it can be reinstalled from the
+  Files app without a PC. To refresh it:
+  `adb -s R5CW213FECX push E:\merkriser\merkrise-debug-arm64.apk /sdcard/Download/merkrise-debug-arm64.apk`.
 - Read the saved progress passively (debug build): `adb exec-out run-as com.hsi.merkrise cat files/progress.json`.
 - In Git Bash set `MSYS_NO_PATHCONV=1` or `/sdcard/...` paths get rewritten; screenshots are in
   `/sdcard/DCIM/Screenshots`.
@@ -211,20 +275,21 @@ code on purpose once and watch it fail.
 merkrise/                       (E:\merkriser\build\merkrise on the Windows PC)
 ├─ HANDOFF.md                   ← this file
 ├─ Cargo.toml                   ← Rust workspace (members = ["core"])
-├─ core/                        ← Rust crate `merkrise-core` (the engine, ~2,260 lines)
+├─ core/                        ← Rust crate `merkrise-core` (the engine, ~2,685 lines)
 │  ├─ Cargo.toml                ← uniffi 0.32.2, serde, serde_json, thiserror, fastrand
 │  ├─ src/{lib.rs, bin/uniffi-bindgen.rs}, uniffi.toml
-│  └─ tests/real_seed.rs        ← integration tests on the real seed
+│  └─ tests/real_seed.rs        ← 4 integration tests on the real seed
 ├─ android/                     ← Gradle app (Kotlin, plain Views, com.hsi.merkrise)
 │  └─ app/src/main/
 │     ├─ java/com/hsi/merkrise/
-│     │   MainActivity.kt       ← screens, navigation, session flow, timers (~1,160 lines)
+│     │   MainActivity.kt       ← screens, navigation, session flow, timers (~1,419 lines)
 │     │   Ui.kt                 ← palette + Context-extension widgets (text, pill, card, FlowLayout …)
-│     │   Keyboard.kt           ← the QWERTZ keyboard with ä ö ü ß
+│     │   ProgressRing.kt       ← circular session-progress ring (custom View)
 │     │   Reminders.kt          ← alarm scheduling, notification, receivers
 │     │   core/merkrise_core.kt ← GENERATED uniffi bindings (committed)
-│     ├─ res/                   ← vector icons, launcher icon (adaptive), logo PNG
-│     ├─ AndroidManifest.xml    ← singleTop, portrait, 2 permissions, 2 receivers
+│     ├─ res/                   ← vector icons, launcher icon (adaptive), logo PNG,
+│     │                            drawable-nodpi/egg_1..7.png, raw/correct.mp3 + wrong.mp3
+│     ├─ AndroidManifest.xml    ← singleTop, portrait, adjustResize, 2 permissions, 2 receivers
 │     ├─ jniLibs/               ← .so (git-ignored) arm64-v8a + x86_64
 │     └─ assets/                ← seed.json + audio/ (git-ignored, derived)
 ├─ scripts/                     ← build-core-android.sh, gen-bindings.sh, bundle-assets.sh,
@@ -273,18 +338,20 @@ state string the core exports and sets alarms from the time the core returns.
 | Group | Functions |
 |---|---|
 | Data | `load_seed(json) -> u32` · `word_count()` · `get_card(i) -> WordCard?` · `levels() -> [LevelInfo]` · `level_words(level) -> [WordRow]` |
-| Sessions | `start_session(level?, size, now)` · `start_fast_session(level?, size, now)` (both `Result<u32, CoreError>`) · `current_question() -> Question?` · `submit_answer(input) -> AnswerFeedback` · `session_progress()` |
+| Sessions | `start_session(level?, size, now)` · `start_fast_session(level?, size, now)` · **`start_learn_new(level?, size, now)`** (all `Result<u32, CoreError>`) · `current_question() -> Question?` · `submit_answer(input) -> AnswerFeedback` · `session_progress()` |
 | Aids | `wand_hint(placed: [u32]) -> [u32]` · `mark_mistakes(expected, typed) -> WordMarks` · `mark_known(word)` · `set_starred(word, bool)` · `rate_easy(word)` |
-| Stats / settings | `stats(now) -> Stats` · `get_pace()` / `set_pace(PaceSettings)` |
+| Stats / settings | `stats(now) -> Stats` (incl. `correct_total` = Memrise correct counts + scored correct answers in this app, saved in `progress.json`) · `get_pace()` / `set_pace(PaceSettings)` |
 | Reminders | `next_review_alarm(min_words, now, last_notified) -> ReviewAlarm {at, count}` |
 | State | `export_state() -> String` · `import_state(json) -> u32` · `reset_progress()` |
 
 Key records: `Question` {position, total, kind, word, prompt, prompt_audio, choices, tiles, meaning, detail,
-note, stage, reps, starred, **retry**, **time_limit_ms**} · `AnswerFeedback` {correct, expected, finished,
-scored, stage, next_due, **hinted**} · `LevelInfo` {index, title, **topic**, count, known, learning} ·
-`WordMarks` {typed: [bool], expected: [bool]} (aligned to whitespace-split words) · `Stage` ·
-`QKind` · `PaceSettings` {new_per_session, interval_scale, length_weight} · `Stats` ·
-`ReviewAlarm`. Kotlin names are camelCase, unsigned ints become `UInt`, enums are UPPER_SNAKE.
+note, stage, reps, starred, **retry**, **time_limit_ms**, **task_position**, **task_total**, answer} ·
+`AnswerFeedback` {correct, expected, finished, scored, stage, next_due, **hinted**} · `LevelInfo` {index,
+title, **topic**, count, known, learning} · `WordMarks` {typed: [bool], expected: [bool]} (aligned to
+whitespace-split words) · `Stage` · `QKind` · `PaceSettings` {new_per_session, interval_scale, length_weight}
+· `Stats` · `ReviewAlarm`. Kotlin names are camelCase, unsigned ints become `UInt`, enums are UPPER_SNAKE.
+`task_position` / `task_total` are 1-based / 3 on Learn new tasks, `task_total` also on its presentation
+(with `task_position` 0), and 0 everywhere else. `answer` is the context-cloze answer (currently unused).
 
 **Time convention:** every `now` / due date is **"core clock" = unix seconds + the local time-zone offset**
 (`Reminders.coreNow()`); it also decides the streak day. Convert back to real epoch (subtract the offset)
@@ -318,15 +385,22 @@ lapses + 1, ease − 0.2 (floor 1.3), due in **10 minutes**, stage demoted. Defa
    / `AudioMc` instead; the unused allowance carries over (credit capped at 2 typed cards).
 4. **Speed round** (`speed_round`): the last ≤ 4 review cards (words already met, ≤ half of the review cards,
    never a new word, no phrase twice) become timed `Mc` cards, easy to hard.
-5. **Retry:** a miss on a scored, non-retry, untimed card inserts a fresh copy `min(pos + 3, len)` cards later
-   (before the speed round); the retry is unscored and unscheduled; missing the last card does not end the
-   session. A hinted (wand) card is a miss. `total` therefore grows by one per retry.
+5. **Retry:** a miss on a scored, non-retry, untimed card inserts a fresh copy `min(pos + 3, first timed card)`
+   cards later (before the speed round); the retry is unscored and unscheduled; missing the last card does
+   not end the session. A hinted (wand) card is a miss. `total` therefore grows by one per retry.
 6. **Options** (`choices_with`): distractors come from the card's own lesson first, then the course; a
    candidate is rejected when `too_similar` (Jaccard word overlap ≥ 0.4, or a run of ≥ 3 shared words, or
    spelling similarity ≥ 0.7). Fast review raises the options' similarity with difficulty (`t`).
 7. **Fast session** (`start_fast_session`): only words already met; Home prefers words practised in this app
    (`Review.touched`) and only fills up from the imported Memrise words when fewer than 12 were practised; a
    lesson draws from all its met words. Due words first. Fewer than 4 words → `NoWords`.
+8. **Learn new** (`start_learn_new`): `level` is required in practice (the UI always passes the chapter);
+   candidates = that lesson's words with `touched == false`, shuffled and truncated to `size`; fewer than 1
+   → `NoWords`. Groups are shuffled as wholes, so each introduction stays next to its three tasks. No
+   retries, no speed round, no typing cap. Each task carries `task_pos` / `task_total`; only the last task has
+   `srs = true`, and `Session.learn_faults` records any missed task so the single update at the end uses the
+   normal demote path. `context_cursor` / `context_deck` are written into the word's `Review` when the group
+   is built.
 
 ### 4.5 Persistence and the progress key
 - `export_state()` returns JSON `{version: 1, pace, days, reviews: {key: Review}}` with **only words the user
@@ -338,6 +412,9 @@ lapses + 1, ease − 0.2 (floor 1.3), due in **10 minutes**, stage demoted. Defa
   gesund) are separate items with separate progress. Memrise `id`s are **not** unique: do not key by id.
 - **Orphans:** saved progress whose key the loaded seed does not have is kept in `Core.orphans` and written
   back, so a wrong or changed seed can never silently delete the owner's progress.
+- `Review.context_cursor` / `context_deck` are part of the saved review, so the sentence bag survives app
+  restarts; `touched` itself is not serialized — `import_state()` sets it on every review present in the
+  file, which is exactly "words the owner has studied in this app".
 - SharedPreferences `merkrise`: `name`, `session_size` (20), `autoplay` (true), `asked_notifications`,
   `wand_warned`, `last_notified`, `last_study` (core clock).
 - ponytail: one JSON file rewritten per answer (a few KB); move to SQLite only if it grows (spec §5 sketches the
@@ -370,11 +447,26 @@ with only the correct answer.
 
 ### 4.8 UI notes
 - `Ui.kt` holds the palette (`BG #352542`, `SURFACE #241431`, `YELLOW #FEE73E`, `TEXT #D1D1C5`, …,
-  `LIGHT_RED` / `LIGHT_GREEN` for text on the dark background) and `Context` extension helpers; there is no
-  XML layout, every screen is built in code.
+  `LIGHT_RED` / `LIGHT_GREEN` for text on the dark background), `EGGS` (the seven drawables) and `Context`
+  extension helpers; there is no XML layout, every screen is built in code.
+- **Egg + ring:** `eggFor(q, progress)` builds a 152 dp frame with `ProgressRing` and a centred 112 dp
+  `ImageView`. The ring always uses `sessionProgress().answered / total` (per answered task). The egg uses
+  `learnDone / learnWordTotal` in Learn new and `correct / scored` otherwise; image 7 needs a finished
+  session at ≥ 80 %. In Learn new, `learnScored` counts scored tasks per word and adds the word to
+  `learnDone` on the third one; "Already known" also adds it.
+- **Typing uses the native IME.** `typing()` creates an `EditText` (`NO_SUGGESTIONS`, Done submits),
+  `specialKeys(field)` puts ä ö ü ß in a row **above** the field and inserts at the cursor, and a 500 ms
+  delayed `smoothScrollTo` lifts the field above the keyboard. `typingActive` keeps `afterRender()` from
+  stealing focus and from scrolling to the top while the keyboard is opening. The manifest uses
+  `adjustResize`. The old in-app `Keyboard.kt` is deleted.
+- **Arrange bank keeps its layout:** picked tiles become `INVISIBLE` (not `GONE`), so the remaining words
+  never jump into the empty slots.
 - Edge-to-edge (targetSdk 35): `applyInsets` pads the header for the status bar, the bottom bar for the
   navigation bar and shrinks the whole frame above the keyboard; the bottom bar hides while the keyboard is up.
-- `screen(gravity, chrome, onBack)` resets per-screen state (`inSession`, timer) and sets what Back does.
+- `screen(gravity, chrome, onBack)` resets per-screen state (`inSession`, timer, typing), hides any open
+  keyboard and sets what Back does.
+- **Sound:** `SoundPool` with `correct.mp3` / `wrong.mp3`, volume 0.05 per stream; the delayed German word
+  audio is cancelled by `screen()` so it cannot play over the next card.
 
 ### 4.9 How the data was obtained (for re-capture if ever needed)
 The A2 course was captured once from the live Memrise API with the owner's session cookie:
@@ -430,7 +522,19 @@ results. The old `/v1.17/` API is gone (410).
 - Wrong words are highlighted as **whole words**; wrong choice = red card, right choice = green card.
 - Chapter navigation: a title **jump list** with ‹ › arrows, and the numbered circles on a lesson are
   **lessons of the same topic** (he read word circles as chapters).
+- **Learn new** (owner, 2026-10-22): from a chapter, 5 unseen-in-this-app words per set, each with exactly
+  three tasks — **type the German, pick the German, arrange a real sentence** — one introduction, no retries,
+  one SRS update on the last task; the sentence bag must not repeat a sentence until all are used. The egg
+  photo tracks completed words; the ring tracks answered tasks (owner: "with each task it should fill").
+- **Typing is the native keyboard**, not the old in-app QWERTZ; the four special characters stay reachable
+  in a row above the field. Keep `adjustResize` and the focus guard.
+- **Sound effects** are wanted, but quietly: currently 0.05 per stream after two 5 dB reductions from 0.16.
 - Fast review: 12 cards; Home draws on words practised in this app first.
+- **UI correction (owner, 2026-10-23):** the Figma "oct 2026 UI correction" boards are to be implemented exactly,
+  but **the tasks stay the same** (the boards only change the display, so Fast review and Arrange keep their
+  English prompt although the boards omit it); ⌂ = Home, ⋯ = Chapters / Stats / Settings, avatar = Profile;
+  the header number = total correct answers; Continue on a timed card before answering = skip = a miss; **the
+  wand stays on Arrange only** (the boards also draw it on Typing/Hearing).
 - Not wanted / out of scope: Videos tab, AI assistant, chat groups, admin / course upload (online features).
 
 ---
@@ -439,17 +543,23 @@ results. The old `/v1.17/` API is gone (410).
 1. **Walk the new features through on the phone** (nobody has seen them all on a device): reminders end to
    end (Settings → Send a test reminder; Samsung "Never sleeping apps" in battery settings), fast review
    and speed-round timers (red phase, lock the screen mid-card, leave via Home and come back), mistake
-   highlighting, lesson circles, the icon fix (the wordmark must not look squeezed in One UI).
-2. **Commit / merge:** branch `lessons-srs-fast-review` is committed but not pushed; decide with the owner
-   about pushing and merging into `main`. The Windows paths in `android/gradle.properties` are committed.
+   highlighting, **Learn new end to end (ring per task, egg per completed word, one SRS update, no retry)**,
+   native typing (special keys, auto-scroll, focus after returning from feedback), lesson circles, the icon
+   fix (the wordmark must not look squeezed in One UI).
+2. **Commit / merge:** the 2026-10-22/23 pass is **uncommitted** in the working tree (`git status` shows
+   `MainActivity.kt`, `Ui.kt`, `core/src/lib.rs`, `core/tests/real_seed.rs`, the generated bindings and
+   manifest modified; `ProgressRing.kt`, `egg_1..7.png`, `res/raw/` new; `Keyboard.kt` deleted). Commit it
+   before handing over. The branch is not pushed; decide with the owner about pushing and merging into
+   `main`. The Windows paths in `android/gradle.properties` are committed.
 3. **Release hygiene:** signed release build, `allowBackup="true"` → `false` (real data now ships), strip the
    release `.so`, 16 KB page-size alignment (`-C link-arg=-Wl,-z,max-page-size=16384` and a 16 KB-aligned JNA).
-4. **Spec deviations to revisit:** `new_per_session` is a cap **per session**, the spec says per day; the
-   per-card answer-time setting (`base_answer_time_ms`) was replaced by the fixed fast-review formula; no
-   SQLite (JSON file instead).
-5. **Small UI debts:** Home still hard-codes "A2 Beyond Beginner" and the "DE" badge; the stage "egg" is an
-   emoji row; the Figma's word-image circle and Videos / AI tabs are not built; a mid-session process death
-   returns to Home (progress is saved per answer, the session itself is not restored); portrait only.
+4. **Spec deviations to revisit:** `new_per_session` is a cap **per session**, the spec says per day; Learn
+   new ignores it and always uses 5 words; the per-card answer-time setting (`base_answer_time_ms`) was
+   replaced by the fixed fast-review formula; no SQLite (JSON file instead).
+5. **Small UI debts:** Home still hard-codes "A2 Beyond Beginner" and the "DE" badge; the stage emoji strip
+   still exists on the question screen next to the new egg/ring badge; the Figma's word-image circle and
+   Videos / AI tabs are not built; a mid-session process death returns to Home (progress is saved per answer,
+   the session itself is not restored); portrait only.
 6. **Runtime importers** (spec §16 TSV, §16.6 folder package) only if the owner changes his mind about
    build-time sets. Optional: migrate the UI to Jetpack Compose.
 7. Review Lesson 01's English meanings (translated by Claude, see `scripts/build-lesson01.py` `EN`).
@@ -485,7 +595,7 @@ results. The old `/v1.17/` API is gone (410).
 
 ---
 
-## 10. Change log of this work (2026-10-21)
+## 10. Change log of this work (2026-10-21 → 2026-10-23)
 
 **Pass 1 — Windows build + visual redesign.** Fresh source extracted from the zip into `E:\merkriser\build`;
 JDK 21, SDK platform 35, `arm64-v8a` ABI added; first install on the phone. `MainActivity.kt` rewritten in the
@@ -509,6 +619,28 @@ launch, cancel the alarm when notifications cannot show, re-arm on resume, wand 
 **speed round** at the end of every normal session; launcher icon (adaptive, pre-padded PNG; an inset-based
 version was squeezed by One UI); progress **orphans** safety net; docs, specs and plans committed on
 `lessons-srs-fast-review`.
+
+**Pass 5 — owner feedback after the build-out (2026-10-22/23, uncommitted).**
+**Learn new:** `start_learn_new` + `learn_group` + `build_contexts` + the persistent per-word sentence bag;
+5 unseen words per chapter, presentation → Typing → Mc → Arrange; no retries; one SRS update on the last
+task (all-correct promotes, any miss demotes); "Learn more new words" on the results screen.
+**Progress badge:** `ProgressRing.kt` (152 dp) + seven egg images (112 dp); ring = answered cards / total
+(per task, after the owner reported it filled only per word), egg = done words / 5 in Learn new and
+accuracy elsewhere; stage emoji strip kept beside it.
+**Typing:** deleted the in-app `Keyboard.kt`; native `EditText` + IME, ä ö ü ß row above the field,
+500 ms auto-scroll, `adjustResize`, focus guard (`typingActive`).
+**Feedback:** `correct.mp3` / `wrong.mp3` via `SoundPool`, volume 0.16 → 0.09 → 0.05 (two 5 dB cuts), German
+word audio delayed until after the effect.
+**Polish:** Arrange bank tiles become `INVISIBLE` instead of `GONE` (no layout jumps); APK copied to
+`/sdcard/Download` on the phone; 62 unit + 4 integration tests.
+
+**Pass 6 — "oct 2026 UI correction" (2026-10-23, uncommitted).** Header + ⋯ menu replace the bottom bar;
+new Home; shared top block (+N, Learned, egg ring, megaphone, answered/total bar); full-width options; blue
+Arrange tiles with the wand on the bank; big Typing/Hearing box with keyboard-up layout; new answer screen;
+timed cards with `PieTimer` and in-place red/green; `Stats.correct_total` in the core (+1 test, mutation-checked;
+63 unit + 4 integration green). `ProgressRing.kt`, the Nice-try popup, statusStrip/chip/roundButton and the
+chart/home/settings/backspace icons were deleted; `ic_megaphone` / `ic_home_outline` / `course_photo.png` added
+from the Figma. Not yet seen on the phone.
 
 **Working agreement used by the two Claude sessions (useful if you do the same):** one owner per file
 group (core + scripts vs Kotlin), hand-off = one message with the frozen API + regenerated bindings, one

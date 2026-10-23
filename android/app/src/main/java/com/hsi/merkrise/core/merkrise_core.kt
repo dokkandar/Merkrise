@@ -1095,6 +1095,29 @@ public object FfiConverterUInt: FfiConverter<UInt, Int> {
 /**
  * @suppress
  */
+public object FfiConverterULong: FfiConverter<ULong, Long> {
+    override fun lift(value: Long): ULong {
+        return value.toULong()
+    }
+
+    override fun read(buf: ByteBuffer): ULong {
+        return lift(buf.getLong())
+    }
+
+    override fun lower(value: ULong): Long {
+        return value.toLong()
+    }
+
+    override fun allocationSize(value: ULong) = 8UL
+
+    override fun write(value: ULong, buf: ByteBuffer) {
+        buf.putLong(value.toLong())
+    }
+}
+
+/**
+ * @suppress
+ */
 public object FfiConverterLong: FfiConverter<Long, Long> {
     override fun lift(value: Long): Long {
         return value
@@ -1649,6 +1672,11 @@ data class Stats (
     var `dueToday`: kotlin.UInt
     , 
     var `streakDays`: kotlin.UInt
+    , 
+    /**
+     * Every correct answer ever: the imported Memrise history plus the scored answers given in this app.
+     */
+    var `correctTotal`: kotlin.ULong
     
 ){
     
@@ -1671,6 +1699,7 @@ public object FfiConverterTypeStats: FfiConverterRustBuffer<Stats> {
             FfiConverterUInt.read(buf),
             FfiConverterUInt.read(buf),
             FfiConverterUInt.read(buf),
+            FfiConverterULong.read(buf),
         )
     }
 
@@ -1680,7 +1709,8 @@ public object FfiConverterTypeStats: FfiConverterRustBuffer<Stats> {
             FfiConverterUInt.allocationSize(value.`learning`) +
             FfiConverterUInt.allocationSize(value.`newWords`) +
             FfiConverterUInt.allocationSize(value.`dueToday`) +
-            FfiConverterUInt.allocationSize(value.`streakDays`)
+            FfiConverterUInt.allocationSize(value.`streakDays`) +
+            FfiConverterULong.allocationSize(value.`correctTotal`)
     )
 
     override fun write(value: Stats, buf: ByteBuffer) {
@@ -1690,6 +1720,7 @@ public object FfiConverterTypeStats: FfiConverterRustBuffer<Stats> {
             FfiConverterUInt.write(value.`newWords`, buf)
             FfiConverterUInt.write(value.`dueToday`, buf)
             FfiConverterUInt.write(value.`streakDays`, buf)
+            FfiConverterULong.write(value.`correctTotal`, buf)
     }
 }
 

@@ -1,0 +1,16 @@
+<!-- Figma "annoncement-megaphone" (node 6389:924), oct 2026 UI correction. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="38dp"
+    android:height="38dp"
+    android:viewportWidth="125"
+    android:viewportHeight="126">
+    <group>
+        <path android:pathData="M97.8002,91.8862L7.76654,112.792L2,102.803L65.122,35.2852"
+            android:fillColor="#352542" />
+        <path android:pathData="M63.1875,31.9492L99.711,95.2088 M97.8002,91.8862L7.76654,112.792L2,102.803L65.122,35.2852 M27.3477,108.238L32.3053,116.824C34.1038,119.907 37.0531,122.149 40.5045,123.057C43.9557,123.964 47.6264,123.464 50.7088,121.665C53.7913,119.867 56.0331,116.918 56.941,113.466C57.8489,110.015 57.3486,106.344 55.5501,103.261L54.7561,101.887 M65.6758,13.8677V2 M111.141,59.3398H123.008 M8.34375,59.3398H20.2114 M25.125,18.7969L33.5168,27.1886 M97.8281,27.1828L106.219,18.791"
+            android:strokeColor="#352542"
+            android:strokeWidth="4"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+    </group>
+</vector>

@@ -1,0 +1,12 @@
+<!-- Figma "home-4" header icon (node 6387:757), oct 2026 UI correction; stroke 1 -> 2 so it survives at 17 dp. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="18dp"
+    android:height="15dp"
+    android:viewportWidth="57"
+    android:viewportHeight="49">
+    <path android:pathData="M0.5,28.5L28.5,0.5L56.5,28.5 M9.11328,19.8848V47.8848H47.8825V19.8848"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>

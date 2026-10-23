@@ -24,10 +24,14 @@ internal const val MUTED = 0x99D1D1C5.toInt()
 internal const val TRACK = 0xFF9B9797.toInt()   // progress track
 internal const val KEY = 0xFFD9D9D9.toInt()     // input field / keys / chips
 internal const val INK = 0xFF233A4D.toInt()     // dark text on yellow / grey
-internal const val GREEN = 0xFF5FA669.toInt()
 internal const val RED = 0xFFC0392B.toInt()
-internal const val LIGHT_RED = 0xFFFF7B72.toInt()   // wrong answer, readable on the dark background
-internal const val LIGHT_GREEN = 0xFF7FD18B.toInt() // right answer, readable on the dark background
+// "oct 2026 UI correction" boards
+internal const val PROMPT = 0xFFF5F5F5.toInt()     // the question text
+internal const val WRONG = 0xFFFE453E.toInt()      // "your answer" when it was wrong
+internal const val PICK_RED = 0xFFEB0C0C.toInt()   // timed card: the wrong pick
+internal const val PICK_GREEN = 0xFF07861A.toInt() // timed card: the right option
+internal const val TILE_BLUE = 0xFF0DA2FF.toInt()  // Arrange: placed tiles
+internal const val RING = 0xFFFAE343.toInt()       // the egg's ring
 
 internal const val MEDIUM = "sans-serif-medium"
 internal const val LIGHT = "sans-serif-light"
@@ -90,12 +94,13 @@ internal fun Context.rule() = View(this).apply {
     layoutParams = lp(MATCH, dp(1)).apply { topMargin = dp(8) }
 }
 
-internal fun Context.pill(caption: String, fill: Int = YELLOW, ink: Int = INK, onClick: () -> Unit) =
-    text(caption, 20f, ink, MEDIUM).apply {
-        background = rounded(fill, 28)
-        elevation = dp(3).toFloat()
-        setPadding(dp(24), dp(14), dp(24), dp(14))
-        layoutParams = lp(MATCH, WRAP).apply { topMargin = dp(12) }
+/** The Figma "Continue" button: a 38 dp pill, 36 dp from the screen edges (12 dp body padding + 24). */
+internal fun Context.pill(caption: String, fill: Int = YELLOW, ink: Int = BG, onClick: () -> Unit) =
+    text(caption, 22.5f, ink, MEDIUM).apply {
+        background = rounded(fill, 19)
+        minHeight = dp(38)
+        setPadding(dp(16), dp(2), dp(16), dp(2))
+        layoutParams = lp(MATCH, WRAP).apply { setMargins(dp(24), dp(12), dp(24), 0) }
         setOnClickListener { onClick() }
     }
 
@@ -103,21 +108,6 @@ internal fun Context.badge(label: String, size: Int, fill: Int = YELLOW, ink: In
     text(label, if (size > 50) 22f else 16f, ink, BLACK).apply {
         background = oval(fill)
         layoutParams = lp(dp(size), dp(size))
-    }
-
-/** Rounded grey chip, e.g. "already learnt". */
-internal fun Context.chip(label: String, ink: Int = GREEN, onClick: (() -> Unit)? = null) =
-    text(label, 13f, ink, MEDIUM).apply {
-        background = rounded(KEY, 16)
-        setPadding(dp(14), dp(6), dp(14), dp(6))
-        onClick?.let { f -> setOnClickListener { f() } }
-    }
-
-internal fun Context.roundButton(label: String, size: Int = 40, onClick: (TextView) -> Unit) =
-    text(label, 18f, INK).apply {
-        background = oval(KEY)
-        layoutParams = lp(dp(size), dp(size)).apply { marginStart = dp(8) }
-        setOnClickListener { onClick(this) }
     }
 
 /** Segmented progress bar: known (yellow) / learning (dim yellow) / rest (track). */
@@ -145,8 +135,10 @@ internal fun Context.column(vararg lines: View) = LinearLayout(this).apply {
     layoutParams = lp(0, WRAP, 1f).apply { marginStart = dp(16) }
 }
 
-/** Left-to-right wrapping layout for the sentence tiles. */
-class FlowLayout(context: Context, private val gapPx: Int) : ViewGroup(context) {
+/** Left-to-right wrapping layout for the sentence tiles. [firstRowInset] keeps room at the end of row one (the wand). */
+class FlowLayout(context: Context, private val gapPx: Int, private val firstRowInset: Int = 0) : ViewGroup(context) {
+    private fun limit(maxW: Int, y: Int) = if (y == 0) maxW - firstRowInset else maxW
+
     override fun onMeasure(widthSpec: Int, heightSpec: Int) {
         val maxW = MeasureSpec.getSize(widthSpec) - paddingLeft - paddingRight
         var x = 0; var y = 0; var rowH = 0
@@ -154,7 +146,7 @@ class FlowLayout(context: Context, private val gapPx: Int) : ViewGroup(context) 
             val v = getChildAt(i)
             if (v.visibility == GONE) continue
             measureChild(v, MeasureSpec.makeMeasureSpec(maxW, MeasureSpec.AT_MOST), MeasureSpec.UNSPECIFIED)
-            if (x > 0 && x + v.measuredWidth > maxW) { x = 0; y += rowH + gapPx; rowH = 0 }
+            if (x > 0 && x + v.measuredWidth > limit(maxW, y)) { x = 0; y += rowH + gapPx; rowH = 0 }
             x += v.measuredWidth + gapPx
             rowH = maxOf(rowH, v.measuredHeight)
         }
@@ -170,7 +162,7 @@ class FlowLayout(context: Context, private val gapPx: Int) : ViewGroup(context) 
         for (i in 0 until childCount) {
             val v = getChildAt(i)
             if (v.visibility == GONE) continue
-            if (x > 0 && x + v.measuredWidth > maxW) { x = 0; y += rowH + gapPx; rowH = 0 }
+            if (x > 0 && x + v.measuredWidth > limit(maxW, y)) { x = 0; y += rowH + gapPx; rowH = 0 }
             v.layout(paddingLeft + x, paddingTop + y, paddingLeft + x + v.measuredWidth, paddingTop + y + v.measuredHeight)
             x += v.measuredWidth + gapPx
             rowH = maxOf(rowH, v.measuredHeight)

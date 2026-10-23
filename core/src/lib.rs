@@ -153,6 +153,8 @@ pub struct Stats {
     pub new_words: u32,
     pub due_today: u32,
     pub streak_days: u32,
+    /// Every correct answer ever: the imported Memrise history plus the scored answers given in this app.
+    pub correct_total: u64,
 }
 
 /// User-adjustable pace (spec §6.3).
@@ -269,6 +271,8 @@ struct Core {
     orphans: BTreeMap<String, Review>,
     /// Unused typing allowance carried between sessions, in tenths of a typed card (see `limit_typing`).
     typing_credit: u32,
+    /// Correct scored answers given in this app (the header's total adds the Memrise history).
+    correct_total: u64,
     mean_len: f32,
     now: i64, // clock of the current session
     session: Option<Session>,
@@ -287,6 +291,7 @@ impl Core {
             days: BTreeSet::new(),
             orphans: BTreeMap::new(),
             typing_credit: 0,
+            correct_total: 0,
             mean_len: 1.0,
             now: 0,
             session: None,
@@ -864,6 +869,7 @@ pub fn load_seed(json: String) -> Result<u32, CoreError> {
     c.orphans.clear();
     c.contexts.clear();
     c.typing_credit = 0;
+    c.correct_total = 0;
     c.session = None;
     for level in parsed.levels {
         let title = level
@@ -1203,7 +1209,7 @@ pub fn current_question() -> Option<Question> {
 #[uniffi::export]
 pub fn submit_answer(user_input: String) -> AnswerFeedback {
     let mut guard = CORE.lock().unwrap();
-    let Core { words, reviews, pace, days, mean_len, now, session, .. } = &mut *guard;
+    let Core { words, reviews, pace, days, mean_len, now, session, correct_total, .. } = &mut *guard;
     let s = match session.as_mut() {
         Some(s) if s.pos < s.questions.len() => s,
         _ => {
@@ -1266,6 +1272,7 @@ pub fn submit_answer(user_input: String) -> AnswerFeedback {
         days.insert(now.div_euclid(86_400));
         if correct {
             s.correct += 1;
+            *correct_total += 1;
         }
     }
     let stage = r.stage;
@@ -1425,6 +1432,8 @@ pub fn stats(now: i64) -> Stats {
         new_words: count(&|r| r.stage == Stage::New),
         due_today: count(&|r| r.stage != Stage::New && r.due <= now),
         streak_days: streak(&c.days, now.div_euclid(86_400)),
+        // the imported reps are the Memrise correct counts (see the import mapping)
+        correct_total: c.initial.iter().map(|r| r.reps as u64).sum::<u64>() + c.correct_total,
     }
 }
 
@@ -1488,6 +1497,8 @@ struct SavedState {
     pace: Option<PaceSettings>,
     days: Vec<i64>,
     reviews: HashMap<String, Review>,
+    #[serde(default)]
+    correct_total: u64,
 }
 
 #[uniffi::export]
@@ -1506,6 +1517,7 @@ pub fn export_state() -> String {
         pace: Some(c.pace.clone()),
         days: c.days.iter().copied().collect(),
         reviews,
+        correct_total: c.correct_total,
     };
     serde_json::to_string(&state).unwrap_or_default()
 }
@@ -1530,6 +1542,7 @@ pub fn import_state(json: String) -> Result<u32, CoreError> {
         }
     }
     c.days.extend(saved.days);
+    c.correct_total = saved.correct_total;
     if let Some(p) = saved.pace {
         c.pace = p;
     }
@@ -1545,6 +1558,7 @@ pub fn reset_progress() {
     c.days.clear();
     c.orphans.clear();
     c.typing_credit = 0;
+    c.correct_total = 0;
     c.session = None;
 }
 
@@ -2674,6 +2688,27 @@ mod tests {
         assert_eq!(streak(&days, 10), 3);
         assert_eq!(streak(&days, 11), 3);
         assert_eq!(streak(&days, 12), 0);
+    }
+
+    #[test]
+    fn correct_total_adds_app_answers_to_the_memrise_history_and_survives_a_restart() {
+        let _g = setup();
+        assert_eq!(stats(NOW).correct_total, 19); // "über" was imported with 19 correct
+        start_session(Some(1), 6, NOW).unwrap();
+        let mut first = true;
+        while let Some(q) = current_question() {
+            let scored_card = q.kind != QKind::Presentation;
+            submit_answer(if first && scored_card { "zzz".into() } else { right_answer(&q) });
+            first &= !scored_card;
+        }
+        let p = session_progress().unwrap();
+        assert!(p.correct > 0 && p.correct < p.scored, "one miss, the rest right: {p:?}");
+        assert_eq!(stats(NOW).correct_total, 19 + p.correct as u64, "only correct answers count");
+        let saved = export_state();
+        reset_progress();
+        assert_eq!(stats(NOW).correct_total, 19);
+        import_state(saved).unwrap();
+        assert_eq!(stats(NOW).correct_total, 19 + p.correct as u64);
     }
 
     #[test]
