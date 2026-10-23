@@ -55,8 +55,9 @@ sh scripts/build-core-android.sh      # cargo-ndk -> android/app/src/main/jniLib
 sh scripts/gen-bindings.sh            # uniffi -> committed Kotlin bindings
 
 # 2. (re)bundle the data into app assets  [only needed if data changed]
-sh scripts/bundle-assets.sh           # copies capture/ seed.json + mp3 -> assets
-python3 -I scripts/build-lesson01.py  # merges resources/01 as level 52 + wavs
+sh scripts/bundle-assets.sh                      # A2 seed.json + mp3 -> assets
+python3 -I scripts/build-lesson01.py             # merges resources/01 as a chapter
+python3 -I scripts/import-pack.py resources/packs/<pack>.zip   # merge content packs (optional)
 
 # 3. build the APK
 cd android && JAVA_HOME=/opt/android-studio/jbr ./gradlew :app:assembleDebug
@@ -96,35 +97,39 @@ $ADB shell am start -n com.hsi.merkrise/.MainActivity
 │                   AndroidManifest.xml, jniLibs/ (.so, git-ignored),
 │                   assets/ (bundled data, git-ignored — see below)}
 ├─ scripts/                ← build-core-android.sh, gen-bindings.sh,
-│                            bundle-assets.sh, build-lesson01.py
-├─ docs/                   ← specs/plans (design authority) + examples/
+│                            bundle-assets.sh, build-lesson01.py, import-pack.py
+├─ docs/                   ← specs/plans + LEARNING_ENGINE.md + CONTENT_PACK_FORMAT.md
 ├─ dist/                   ← built APKs (git-ignored)
-├─ capture/   *DATA*       ← the captured A2 course  (git-ignored, LOCAL ONLY)
-├─ resources/ *DATA*       ← Lesson 01 source folder  (git-ignored, LOCAL ONLY)
+├─ resources/ *DATA*       ← ALL source content (git-ignored, LOCAL ONLY — see resources/README.md)
+│   ├─ memrise/            ← everything downloaded from Memrise
+│   │   ├─ 690189-a2-beyond-beginner/   (A2: seed.json, raw/, audio/ 3178 mp3)
+│   │   └─ 37726-advanced-vocabulary/   (Advanced: seed.json, raw/, audio/ 99)
+│   ├─ 01/                 ← example custom lesson (folder-per-item format)
+│   └─ packs/              ← drop content packs (.zip) here to import (§CONTENT_PACK_FORMAT)
 └─ target/                 ← Rust build cache (git-ignored, regenerable)
 ```
 
 ### ⚠ The data is LOCAL-ONLY — keep it with this folder
 The **code and docs are on GitHub** (`git@github.com:dokkandar/Merkrise.git`,
-branch `main`). The **data and voice files are git-ignored and are NOT on GitHub**
-(they are large and personal). They exist only inside this folder. **A fresh git
-clone will NOT have them.** Do not delete `capture/` or `resources/`, and back
-them up separately — the captured audio in particular is irreplaceable (Memrise
-is sunsetting the source site).
+branch `main`). The **data and voice files (`resources/`) are git-ignored and are
+NOT on GitHub** (large and personal). They exist only inside this folder. **A
+fresh git clone will NOT have them.** Do not delete `resources/`, and back it up
+separately — the captured audio is irreplaceable (Memrise is sunsetting the
+source site).
 
 ### The data assets
 | Location | What | Size |
 |---|---|---|
-| `capture/seed.json` | **A2 course dataset** — 51 levels, **1,617 words** (term, meaning, part-of-speech, all-forms, literal, audio refs, typing alternatives, and the user's Memrise progress) | 1.9 MB |
-| `capture/raw/level_001..051.json` | raw API responses (backup) | 15 MB |
-| `capture/audio/` | **A2 voice files — 3,178 mp3** (native speakers, 2 per word) | 118 MB |
-| `resources/01/Files/` | Lesson 01 text: `N.txt` headword + `N.1/N.2.txt` example sentences (64 words) | — |
-| `resources/01/{simon,helmut}/` | Lesson 01 **voice files — 383 wav** (2 speakers) | 62 MB |
-| `android/app/src/main/assets/seed.json` | **bundled, merged** dataset: 52 levels / **1,681 words** (A2 + Lesson 01). *Derived* — regenerate with the §2 scripts. | 1.9 MB |
-| `android/app/src/main/assets/audio/` | bundled voices: 3,178 mp3 + 64 `l01_*.wav` = **3,242 files** | 124 MB |
+| `resources/memrise/690189-a2-beyond-beginner/seed.json` | **A2 dataset** — 51 levels, **1,617 words** (term, meaning, pos, audio refs, typing alternatives, the user's Memrise progress) + `raw/` | ~17 MB |
+| `resources/memrise/690189-a2-beyond-beginner/audio/` | **A2 voices — 3,178 mp3** (2 per word) | 118 MB |
+| `resources/memrise/37726-advanced-vocabulary/` | **Advanced dataset** — 65 levels, **2,084 words** + `raw/` + `audio/` (only 99 — mostly text) | ~5 MB |
+| `resources/01/` | example custom lesson — 64 words (`Files/` text + `simon/`,`helmut/` **383 wav**) | 62 MB |
+| `resources/packs/` | drop zone for content packs (`.zip`) — see `docs/CONTENT_PACK_FORMAT.md` | — |
+| `android/app/src/main/assets/` | **bundled, merged** data that ships in the APK: seed.json (52 levels / 1,681 words = A2 + Lesson 01) + audio (3,242 files). *Derived* — regenerate with the §2 scripts. | 125 MB |
 
-`capture/` is the master A2 source; `resources/01` is the master Lesson 01 source;
-`android/app/src/main/assets/` is a derived copy that ships in the APK.
+`resources/` holds the masters; `android/app/src/main/assets/` is the derived,
+shipped copy. The Advanced course (37726) is captured but **not yet wired into the
+app** (it's text-only; integrate as another course when wanted).
 
 ---
 
@@ -186,6 +191,9 @@ with body `{"session_source_id":690189,"session_source_type":
   `docs/LEARNING_ENGINE.md` — the authority for the SRS/teaching flow (the
   difficulty + time ladders, sessions, progress seeding, schema, pseudocode).
   Read this before building step 1 of §7.
+- **⭐ Content pack format (how to feed new content in):**
+  `docs/CONTENT_PACK_FORMAT.md` — the `.zip` import rule (AI-friendly); reference
+  importer is `scripts/import-pack.py`.
 - **Spec (overall design authority):** `docs/superpowers/specs/2026-10-20-merkrise-v1-design.md`
   — full schema, the SM-2 + word-length SRS design, the 5-stage Memrise
   progression, Memrise→SM-2 progress-import mapping, the bulk-import format

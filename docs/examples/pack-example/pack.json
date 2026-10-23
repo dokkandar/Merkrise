@@ -1,0 +1,23 @@
+{
+  "format": "merkrise-pack/1",
+  "name": "Example Pack",
+  "language": "de",
+  "sections": [
+    {
+      "title": "Greetings",
+      "items": [
+        { "term": "Guten Morgen", "meaning": "good morning", "examples": ["Guten Morgen, wie geht es dir?"] },
+        { "term": "Tschüss", "meaning": "bye", "pos": "interj" },
+        { "term": "Wie geht's?", "meaning": "how are you?" }
+      ]
+    },
+    {
+      "title": "Food",
+      "items": [
+        { "term": "der Apfel", "meaning": "the apple", "pos": "n", "alt": ["der apfel", "apfel"] },
+        { "term": "das Brot", "meaning": "the bread", "pos": "n" },
+        { "term": "essen", "meaning": "to eat", "pos": "v", "examples": ["Ich esse gern Pizza."] }
+      ]
+    }
+  ]
+}
